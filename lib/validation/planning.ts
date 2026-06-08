@@ -3,6 +3,16 @@ import { z } from "zod";
 export const nonNegativeIntegerSchema = z.number().int().min(0);
 
 const formIntegerSchema = z.coerce.number().int().min(0);
+const optionalFormDateSchema = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  z.coerce.date().optional(),
+);
+const readinessTargetKeySchema = z
+  .string()
+  .regex(
+    /^(project|build_stage|build_matrix_entry):.+/,
+    "Readiness target is required",
+  );
 
 export const projectInitSchema = z.object({
   name: z.string().trim().min(1, "Project name is required"),
@@ -83,4 +93,29 @@ export const aiProposalReviewSchema = z.object({
   proposalId: z.string().uuid(),
   disposition: z.enum(["accepted", "rejected", "revised"]),
   reviewNotes: z.string().trim().optional(),
+});
+
+export const readinessSignalCreateSchema = z.object({
+  projectId: z.string().uuid(),
+  targetKey: readinessTargetKeySchema,
+  status: z.enum(["greenlight", "at_risk", "blocked"]),
+  summary: z.string().trim().min(1, "Summary is required"),
+  ownerTeam: z.string().trim().optional(),
+  rationale: z.string().trim().optional(),
+});
+
+export const blockerCreateSchema = z.object({
+  projectId: z.string().uuid(),
+  targetKey: readinessTargetKeySchema,
+  readinessSignalId: z
+    .union([z.string().uuid(), z.literal("").transform(() => undefined)])
+    .optional(),
+  title: z.string().trim().min(1, "Blocker title is required"),
+  status: z.enum(["open", "mitigating", "resolved", "accepted_risk"]),
+  severity: z.string().trim().min(1, "Severity is required"),
+  ownerTeam: z.string().trim().min(1, "Owner team is required"),
+  impact: z.string().trim().min(1, "Impact is required"),
+  dueDate: optionalFormDateSchema,
+  mitigation: z.string().trim().optional(),
+  decisionNeeded: z.boolean().optional(),
 });

@@ -1,5 +1,6 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -36,6 +37,19 @@ export const matrixReadinessStatus = pgEnum("matrix_readiness_status", [
   "greenlight",
   "at_risk",
   "blocked",
+]);
+
+export const readinessStatus = pgEnum("readiness_status", [
+  "greenlight",
+  "at_risk",
+  "blocked",
+]);
+
+export const blockerStatus = pgEnum("blocker_status", [
+  "open",
+  "mitigating",
+  "resolved",
+  "accepted_risk",
 ]);
 
 export const aiRunStatus = pgEnum("ai_run_status", [
@@ -152,6 +166,10 @@ export const projectsRelations = relations(projects, ({ many }) => ({
   buildQtyAllocations: many(buildQtyAllocations),
   buildMatrixEntries: many(buildMatrixEntries),
   allocationChangeLogs: many(allocationChangeLogs),
+  readinessSignals: many(readinessSignals),
+  readinessRollups: many(readinessRollups),
+  blockers: many(blockers),
+  readinessAuditLogs: many(readinessAuditLogs),
   aiRuns: many(aiRuns),
   aiProposals: many(aiProposals),
   aiAuditEvents: many(aiAuditEvents),
@@ -167,6 +185,10 @@ export const buildStagesRelations = relations(buildStages, ({ many, one }) => ({
   buildQtyAllocations: many(buildQtyAllocations),
   buildMatrixEntries: many(buildMatrixEntries),
   allocationChangeLogs: many(allocationChangeLogs),
+  readinessSignals: many(readinessSignals),
+  readinessRollups: many(readinessRollups),
+  blockers: many(blockers),
+  readinessAuditLogs: many(readinessAuditLogs),
   aiRuns: many(aiRuns),
   aiProposals: many(aiProposals),
   aiAuditEvents: many(aiAuditEvents),
@@ -431,6 +453,204 @@ export const buildMatrixEntries = pgTable(
     uniqueIndex("build_matrix_entries_active_allocation_uidx")
       .on(table.buildQtyAllocationId)
       .where(sql`${table.deletedAt} is null`),
+  ],
+);
+
+export const readinessSignals = pgTable(
+  "readiness_signals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    buildStageId: uuid("build_stage_id").references(() => buildStages.id, {
+      onDelete: "set null",
+    }),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    status: readinessStatus("status").notNull().default("at_risk"),
+    ownerTeam: text("owner_team").notNull().default(""),
+    ownerUserId: text("owner_user_id").notNull().default(""),
+    summary: text("summary").notNull().default(""),
+    rationale: text("rationale").notNull().default(""),
+    source: text("source").notNull().default("manual"),
+    manualOverride: boolean("manual_override").notNull().default(false),
+    overrideReason: text("override_reason").notNull().default(""),
+    aiSource: jsonb("ai_source").$type<Record<string, unknown>>(),
+    proposalRef: text("proposal_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("readiness_signals_project_id_idx").on(table.projectId),
+    index("readiness_signals_build_stage_id_idx").on(table.buildStageId),
+    index("readiness_signals_target_idx").on(table.targetType, table.targetId),
+    index("readiness_signals_status_idx").on(table.status),
+    uniqueIndex("readiness_signals_active_target_uidx")
+      .on(table.projectId, table.targetType, table.targetId)
+      .where(sql`${table.deletedAt} is null`),
+  ],
+);
+
+export const readinessRollups = pgTable(
+  "readiness_rollups",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    buildStageId: uuid("build_stage_id").references(() => buildStages.id, {
+      onDelete: "set null",
+    }),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    status: readinessStatus("status").notNull().default("greenlight"),
+    sourceSignalCount: integer("source_signal_count").notNull().default(0),
+    computedAt: timestamp("computed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("readiness_rollups_project_id_idx").on(table.projectId),
+    index("readiness_rollups_build_stage_id_idx").on(table.buildStageId),
+    index("readiness_rollups_target_idx").on(table.targetType, table.targetId),
+    uniqueIndex("readiness_rollups_target_uidx").on(
+      table.projectId,
+      table.targetType,
+      table.targetId,
+    ),
+    check(
+      "readiness_rollups_source_signal_count_nonnegative",
+      sql`${table.sourceSignalCount} >= 0`,
+    ),
+  ],
+);
+
+export const blockers = pgTable(
+  "blockers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    buildStageId: uuid("build_stage_id").references(() => buildStages.id, {
+      onDelete: "set null",
+    }),
+    readinessSignalId: uuid("readiness_signal_id").references(
+      () => readinessSignals.id,
+      { onDelete: "set null" },
+    ),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    title: text("title").notNull(),
+    status: blockerStatus("status").notNull().default("open"),
+    severity: text("severity").notNull(),
+    ownerTeam: text("owner_team").notNull(),
+    ownerUserId: text("owner_user_id").notNull().default(""),
+    impact: text("impact").notNull(),
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    mitigation: text("mitigation").notNull().default(""),
+    decisionNeeded: boolean("decision_needed").notNull().default(false),
+    aiSource: jsonb("ai_source").$type<Record<string, unknown>>(),
+    proposalRef: text("proposal_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("blockers_project_id_idx").on(table.projectId),
+    index("blockers_build_stage_id_idx").on(table.buildStageId),
+    index("blockers_readiness_signal_id_idx").on(table.readinessSignalId),
+    index("blockers_target_idx").on(table.targetType, table.targetId),
+    index("blockers_status_idx").on(table.status),
+    index("blockers_due_date_idx").on(table.dueDate),
+  ],
+);
+
+export const readinessSignoffs = pgTable(
+  "readiness_signoffs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    readinessSignalId: uuid("readiness_signal_id")
+      .notNull()
+      .references(() => readinessSignals.id, { onDelete: "cascade" }),
+    signerUserId: text("signer_user_id").notNull(),
+    disposition: text("disposition").notNull(),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("readiness_signoffs_project_id_idx").on(table.projectId),
+    index("readiness_signoffs_signal_id_idx").on(table.readinessSignalId),
+    index("readiness_signoffs_signer_idx").on(table.signerUserId),
+  ],
+);
+
+export const readinessAuditLogs = pgTable(
+  "readiness_audit_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    buildStageId: uuid("build_stage_id").references(() => buildStages.id, {
+      onDelete: "set null",
+    }),
+    readinessSignalId: uuid("readiness_signal_id").references(
+      () => readinessSignals.id,
+      { onDelete: "set null" },
+    ),
+    readinessRollupId: uuid("readiness_rollup_id").references(
+      () => readinessRollups.id,
+      { onDelete: "set null" },
+    ),
+    blockerId: uuid("blocker_id").references(() => blockers.id, {
+      onDelete: "set null",
+    }),
+    readinessSignoffId: uuid("readiness_signoff_id").references(
+      () => readinessSignoffs.id,
+      { onDelete: "set null" },
+    ),
+    actorUserId: text("actor_user_id").notNull(),
+    eventType: text("event_type").notNull(),
+    fieldName: text("field_name").notNull().default(""),
+    beforeValue: jsonb("before_value").$type<unknown>(),
+    afterValue: jsonb("after_value").$type<unknown>(),
+    reason: text("reason").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("readiness_audit_logs_project_id_idx").on(table.projectId),
+    index("readiness_audit_logs_build_stage_id_idx").on(table.buildStageId),
+    index("readiness_audit_logs_signal_id_idx").on(table.readinessSignalId),
+    index("readiness_audit_logs_rollup_id_idx").on(table.readinessRollupId),
+    index("readiness_audit_logs_blocker_id_idx").on(table.blockerId),
+    index("readiness_audit_logs_signoff_id_idx").on(table.readinessSignoffId),
+    index("readiness_audit_logs_created_at_idx").on(table.createdAt),
   ],
 );
 
@@ -723,6 +943,99 @@ export const buildMatrixEntriesRelations = relations(
   }),
 );
 
+export const readinessSignalsRelations = relations(
+  readinessSignals,
+  ({ many, one }) => ({
+    project: one(projects, {
+      fields: [readinessSignals.projectId],
+      references: [projects.id],
+    }),
+    buildStage: one(buildStages, {
+      fields: [readinessSignals.buildStageId],
+      references: [buildStages.id],
+    }),
+    blockers: many(blockers),
+    signoffs: many(readinessSignoffs),
+    auditLogs: many(readinessAuditLogs),
+  }),
+);
+
+export const readinessRollupsRelations = relations(
+  readinessRollups,
+  ({ many, one }) => ({
+    project: one(projects, {
+      fields: [readinessRollups.projectId],
+      references: [projects.id],
+    }),
+    buildStage: one(buildStages, {
+      fields: [readinessRollups.buildStageId],
+      references: [buildStages.id],
+    }),
+    auditLogs: many(readinessAuditLogs),
+  }),
+);
+
+export const blockersRelations = relations(blockers, ({ many, one }) => ({
+  project: one(projects, {
+    fields: [blockers.projectId],
+    references: [projects.id],
+  }),
+  buildStage: one(buildStages, {
+    fields: [blockers.buildStageId],
+    references: [buildStages.id],
+  }),
+  readinessSignal: one(readinessSignals, {
+    fields: [blockers.readinessSignalId],
+    references: [readinessSignals.id],
+  }),
+  auditLogs: many(readinessAuditLogs),
+}));
+
+export const readinessSignoffsRelations = relations(
+  readinessSignoffs,
+  ({ many, one }) => ({
+    project: one(projects, {
+      fields: [readinessSignoffs.projectId],
+      references: [projects.id],
+    }),
+    readinessSignal: one(readinessSignals, {
+      fields: [readinessSignoffs.readinessSignalId],
+      references: [readinessSignals.id],
+    }),
+    auditLogs: many(readinessAuditLogs),
+  }),
+);
+
+export const readinessAuditLogsRelations = relations(
+  readinessAuditLogs,
+  ({ one }) => ({
+    project: one(projects, {
+      fields: [readinessAuditLogs.projectId],
+      references: [projects.id],
+    }),
+    buildStage: one(buildStages, {
+      fields: [readinessAuditLogs.buildStageId],
+      references: [buildStages.id],
+    }),
+    readinessSignal: one(readinessSignals, {
+      fields: [readinessAuditLogs.readinessSignalId],
+      references: [readinessSignals.id],
+    }),
+    readinessRollup: one(readinessRollups, {
+      fields: [readinessAuditLogs.readinessRollupId],
+      references: [readinessRollups.id],
+    }),
+    blocker: one(blockers, {
+      fields: [readinessAuditLogs.blockerId],
+      references: [blockers.id],
+    }),
+    readinessSignoff: one(readinessSignoffs, {
+      fields: [readinessAuditLogs.readinessSignoffId],
+      references: [readinessSignoffs.id],
+    }),
+  }),
+);
+
 export const allocationChangeLogsRelations = relations(
   allocationChangeLogs,
   ({ one }) => ({
@@ -838,6 +1151,16 @@ export type AllocationChangeLog = typeof allocationChangeLogs.$inferSelect;
 export type NewAllocationChangeLog = typeof allocationChangeLogs.$inferInsert;
 export type BuildMatrixEntry = typeof buildMatrixEntries.$inferSelect;
 export type NewBuildMatrixEntry = typeof buildMatrixEntries.$inferInsert;
+export type ReadinessSignal = typeof readinessSignals.$inferSelect;
+export type NewReadinessSignal = typeof readinessSignals.$inferInsert;
+export type ReadinessRollup = typeof readinessRollups.$inferSelect;
+export type NewReadinessRollup = typeof readinessRollups.$inferInsert;
+export type Blocker = typeof blockers.$inferSelect;
+export type NewBlocker = typeof blockers.$inferInsert;
+export type ReadinessSignoff = typeof readinessSignoffs.$inferSelect;
+export type NewReadinessSignoff = typeof readinessSignoffs.$inferInsert;
+export type ReadinessAuditLog = typeof readinessAuditLogs.$inferSelect;
+export type NewReadinessAuditLog = typeof readinessAuditLogs.$inferInsert;
 export type AIAgent = typeof aiAgents.$inferSelect;
 export type NewAIAgent = typeof aiAgents.$inferInsert;
 export type AIRun = typeof aiRuns.$inferSelect;

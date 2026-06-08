@@ -3,12 +3,14 @@
 import { useActionState } from "react";
 
 import {
+  createBlockerAction,
   createBuildMatrixEntryAction,
   createBuildStageAction,
   createConfigProfileAction,
   createDemandProfileMappingAction,
   createFunctionalTeamDemandAction,
   createProjectAction,
+  createReadinessSignalAction,
   generateStageSummaryProposalAction,
   reviewAiProposalAction,
   type WorkspaceActionState,
@@ -580,17 +582,209 @@ export function AIProposalReviewForm({
   );
 }
 
+export function ReadinessSignalForm({
+  projectId,
+  targetOptions,
+}: ProjectScopedFormProps & {
+  targetOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    createReadinessSignalAction,
+    initialWorkspaceActionState,
+  );
+  const disabled = targetOptions.length === 0;
+
+  return (
+    <form
+      action={action}
+      className="grid gap-3 sm:grid-cols-2"
+      key={formKey(state)}
+    >
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={disabled}
+        name="targetKey"
+        options={targetOptions}
+        placeholder="Readiness target"
+        state={state}
+      />
+      <SelectField
+        disabled={disabled}
+        name="status"
+        options={[
+          { label: "Greenlight", value: "greenlight" },
+          { label: "At Risk", value: "at_risk" },
+          { label: "Blocked", value: "blocked" },
+        ]}
+        placeholder="Readiness"
+        state={state}
+      />
+      <FieldError name="targetKey" state={state} />
+      <FieldError name="status" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("summary")}
+        aria-invalid={hasFieldError(state, "summary")}
+        className="sm:col-span-2"
+        defaultValue={valueFor(state, "summary")}
+        name="summary"
+        placeholder="Readiness summary"
+        required
+      />
+      <FieldError className="sm:col-span-2" name="summary" state={state} />
+      <Input
+        defaultValue={valueFor(state, "ownerTeam")}
+        name="ownerTeam"
+        placeholder="Owner team"
+      />
+      <Input
+        defaultValue={valueFor(state, "rationale")}
+        name="rationale"
+        placeholder="Rationale"
+      />
+      <SubmitButton
+        className="sm:col-span-2"
+        disabled={disabled}
+        pending={pending}
+      >
+        Save readiness signal
+      </SubmitButton>
+      <ActionMessage className="sm:col-span-2" state={state} />
+    </form>
+  );
+}
+
+export function BlockerForm({
+  projectId,
+  readinessSignalOptions,
+  targetOptions,
+}: ProjectScopedFormProps & {
+  readinessSignalOptions: Option[];
+  targetOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    createBlockerAction,
+    initialWorkspaceActionState,
+  );
+  const disabled = targetOptions.length === 0;
+
+  return (
+    <form
+      action={action}
+      className="grid gap-3 sm:grid-cols-2"
+      key={formKey(state)}
+    >
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={disabled}
+        name="targetKey"
+        options={targetOptions}
+        placeholder="Blocker target"
+        state={state}
+      />
+      <SelectField
+        disabled={disabled}
+        name="readinessSignalId"
+        options={readinessSignalOptions}
+        placeholder="Linked readiness signal"
+        required={false}
+        state={state}
+      />
+      <FieldError name="targetKey" state={state} />
+      <FieldError name="readinessSignalId" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("title")}
+        aria-invalid={hasFieldError(state, "title")}
+        defaultValue={valueFor(state, "title")}
+        name="title"
+        placeholder="Blocker title"
+        required
+      />
+      <SelectField
+        disabled={disabled}
+        name="status"
+        options={[
+          { label: "Open", value: "open" },
+          { label: "Mitigating", value: "mitigating" },
+          { label: "Resolved", value: "resolved" },
+          { label: "Accepted Risk", value: "accepted_risk" },
+        ]}
+        placeholder="Blocker status"
+        state={state}
+      />
+      <FieldError name="title" state={state} />
+      <FieldError name="status" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("severity")}
+        aria-invalid={hasFieldError(state, "severity")}
+        defaultValue={valueFor(state, "severity")}
+        name="severity"
+        placeholder="Severity"
+        required
+      />
+      <Input
+        aria-describedby={fieldErrorId("ownerTeam")}
+        aria-invalid={hasFieldError(state, "ownerTeam")}
+        defaultValue={valueFor(state, "ownerTeam")}
+        name="ownerTeam"
+        placeholder="Owner team"
+        required
+      />
+      <FieldError name="severity" state={state} />
+      <FieldError name="ownerTeam" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("impact")}
+        aria-invalid={hasFieldError(state, "impact")}
+        defaultValue={valueFor(state, "impact")}
+        name="impact"
+        placeholder="Impact"
+        required
+      />
+      <Input
+        defaultValue={valueFor(state, "dueDate")}
+        name="dueDate"
+        type="date"
+      />
+      <FieldError name="impact" state={state} />
+      <FieldError name="dueDate" state={state} />
+      <Textarea
+        className="sm:col-span-2"
+        defaultValue={valueFor(state, "mitigation")}
+        name="mitigation"
+        placeholder="Mitigation"
+      />
+      <label className="flex items-center gap-2 text-sm text-muted-foreground sm:col-span-2">
+        <input
+          defaultChecked={valueFor(state, "decisionNeeded") === "on"}
+          name="decisionNeeded"
+          type="checkbox"
+        />
+        Decision needed
+      </label>
+      <SubmitButton
+        className="sm:col-span-2"
+        disabled={disabled}
+        pending={pending}
+      >
+        Save blocker
+      </SubmitButton>
+      <ActionMessage className="sm:col-span-2" state={state} />
+    </form>
+  );
+}
+
 function SelectField({
   disabled,
   name,
   options,
   placeholder,
+  required = true,
   state,
 }: {
   disabled?: boolean;
   name: string;
   options: Option[];
   placeholder: string;
+  required?: boolean;
   state: WorkspaceActionState;
 }) {
   return (
@@ -601,7 +795,7 @@ function SelectField({
       defaultValue={valueFor(state, name)}
       disabled={disabled}
       name={name}
-      required
+      required={required}
     >
       <option value="">{placeholder}</option>
       {options.map((option) => (
@@ -657,9 +851,11 @@ function ActionMessage({
 }
 
 function FieldError({
+  className,
   name,
   state,
 }: {
+  className?: string;
   name: string;
   state: WorkspaceActionState;
 }) {
@@ -670,7 +866,10 @@ function FieldError({
   }
 
   return (
-    <p className="text-sm text-destructive" id={fieldErrorId(name)}>
+    <p
+      className={cn("text-sm text-destructive", className)}
+      id={fieldErrorId(name)}
+    >
       {message}
     </p>
   );

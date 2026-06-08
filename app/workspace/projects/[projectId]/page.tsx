@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import {
   AIGenerateStageSummaryForm,
   AIProposalReviewForm,
+  BlockerForm,
   BuildMatrixEntryForm,
   BuildQtyAllocationForm,
   BuildStageForm,
   ConfigProfileForm,
   DemandProfileMappingForm,
   FunctionalTeamDemandForm,
+  ReadinessSignalForm,
 } from "@/components/planning/action-forms";
 import {
   Card,
@@ -34,6 +36,11 @@ import {
   listPlanningRecordsForProject,
 } from "@/lib/domain/projects";
 import { listAiProposalsForProject } from "@/lib/domain/ai-proposals";
+import {
+  computeWorstChildReadiness,
+  listReadinessRecordsForProject,
+  type ReadinessStatus,
+} from "@/lib/domain/readiness";
 
 type ProjectPageProps = {
   params: Promise<{
@@ -62,6 +69,10 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     planningWarnings,
     profiles,
     project,
+    readinessAuditLogs,
+    readinessSignals,
+    readinessWarnings,
+    blockers,
     stages,
   } = projectPageData;
   const stageNameById = new Map(stages.map((stage) => [stage.id, stage.name]));
@@ -103,6 +114,71 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       label: allocationLabelById.get(allocation.id) ?? allocation.id,
       value: allocation.id,
     }));
+  const readinessTargetOptions = [
+    { label: `Project / ${project.name}`, value: `project:${project.id}` },
+    ...stages.map((stage) => ({
+      label: `Stage / ${stage.name}`,
+      value: `build_stage:${stage.id}`,
+    })),
+    ...matrixEntries.map((entry) => ({
+      label: `Matrix / ${allocationLabelById.get(entry.buildQtyAllocationId) ?? entry.id}`,
+      value: `build_matrix_entry:${entry.id}`,
+    })),
+  ];
+  const readinessSignalOptions = readinessSignals.map((signal) => ({
+    label: `${formatReadinessLabel(signal.status)} / ${targetLabelFor(
+      signal.targetType,
+      signal.targetId,
+      {
+        matrixEntryLabelById: new Map(
+          matrixEntries.map((entry) => [
+            entry.id,
+            allocationLabelById.get(entry.buildQtyAllocationId) ?? entry.id,
+          ]),
+        ),
+        projectName: project.name,
+        stageNameById,
+      },
+    )} / ${signal.summary}`,
+    value: signal.id,
+  }));
+  const matrixReadinessStatusesByStageId = new Map<string, ReadinessStatus[]>();
+
+  for (const entry of matrixEntries) {
+    const statuses =
+      matrixReadinessStatusesByStageId.get(entry.buildStageId) ?? [];
+    statuses.push(entry.readinessStatus);
+    matrixReadinessStatusesByStageId.set(entry.buildStageId, statuses);
+  }
+
+  const signalReadinessStatusesByStageId = new Map<string, ReadinessStatus[]>();
+
+  for (const signal of readinessSignals) {
+    if (!signal.buildStageId) {
+      continue;
+    }
+
+    const statuses =
+      signalReadinessStatusesByStageId.get(signal.buildStageId) ?? [];
+    statuses.push(signal.status);
+    signalReadinessStatusesByStageId.set(signal.buildStageId, statuses);
+  }
+
+  const stageReadinessRows = stages.map((stage) => {
+    const statuses = [
+      ...(matrixReadinessStatusesByStageId.get(stage.id) ?? []),
+      ...(signalReadinessStatusesByStageId.get(stage.id) ?? []),
+    ];
+
+    return {
+      signalCount: signalReadinessStatusesByStageId.get(stage.id)?.length ?? 0,
+      stage,
+      status: computeWorstChildReadiness(statuses),
+    };
+  });
+  const visibleBlockers = blockers.filter(
+    (blocker) => blocker.status !== "resolved",
+  );
   const operationsByProposalId = new Map<string, typeof aiOperations>();
 
   for (const operation of aiOperations) {
@@ -564,6 +640,218 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       <section className="grid gap-6">
         <Card>
           <CardHeader>
+            <CardTitle>Readiness and blockers</CardTitle>
+            <CardDescription>
+              {readinessSignals.length} signal
+              {readinessSignals.length === 1 ? "" : "s"} /{" "}
+              {visibleBlockers.length} active blocker
+              {visibleBlockers.length === 1 ? "" : "s"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-6">
+            <div className="grid gap-4 xl:grid-cols-3">
+              <div className="rounded-lg border p-4 xl:col-span-2">
+                <div className="mb-3 text-sm font-medium">
+                  Stage readiness summary
+                </div>
+                {stageReadinessRows.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                    No stages for readiness rollup.
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Stage</TableHead>
+                        <TableHead>Rollup</TableHead>
+                        <TableHead>Signals</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stageReadinessRows.map((row) => (
+                        <TableRow key={row.stage.id}>
+                          <TableCell className="font-medium">
+                            {row.stage.name}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                row.status === "blocked"
+                                  ? "destructive"
+                                  : "secondary"
+                              }
+                            >
+                              {formatReadinessLabel(row.status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{row.signalCount}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <div className="mb-3 text-sm font-medium">
+                  Readiness warnings
+                </div>
+                {readinessWarnings.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                    No readiness warnings.
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {readinessWarnings.map((warning) => (
+                      <div className="rounded-lg border p-3" key={warning.id}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-medium">
+                            {warning.title}
+                          </div>
+                          <Badge
+                            variant={
+                              warning.severity === "warning"
+                                ? "destructive"
+                                : "secondary"
+                            }
+                          >
+                            {warning.severity}
+                          </Badge>
+                        </div>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {warning.detail}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-6 xl:grid-cols-2">
+              <div className="rounded-lg border p-4">
+                <div className="mb-4 text-sm font-medium">
+                  Add readiness signal
+                </div>
+                <ReadinessSignalForm
+                  projectId={project.id}
+                  targetOptions={readinessTargetOptions}
+                />
+              </div>
+              <div className="rounded-lg border p-4">
+                <div className="mb-4 text-sm font-medium">Add blocker</div>
+                <BlockerForm
+                  projectId={project.id}
+                  readinessSignalOptions={readinessSignalOptions}
+                  targetOptions={readinessTargetOptions}
+                />
+              </div>
+            </div>
+
+            {readinessSignals.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No readiness signals.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Target</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Owner</TableHead>
+                      <TableHead>Summary</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {readinessSignals.map((signal) => (
+                      <TableRow key={signal.id}>
+                        <TableCell>
+                          {targetLabelFor(signal.targetType, signal.targetId, {
+                            matrixEntryLabelById: new Map(
+                              matrixEntries.map((entry) => [
+                                entry.id,
+                                allocationLabelById.get(
+                                  entry.buildQtyAllocationId,
+                                ) ?? entry.id,
+                              ]),
+                            ),
+                            projectName: project.name,
+                            stageNameById,
+                          })}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              signal.status === "blocked"
+                                ? "destructive"
+                                : "secondary"
+                            }
+                          >
+                            {formatReadinessLabel(signal.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{signal.ownerTeam || "-"}</TableCell>
+                        <TableCell>{signal.summary}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {visibleBlockers.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No active blockers.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Blocker</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Owner</TableHead>
+                      <TableHead>Severity</TableHead>
+                      <TableHead>Due</TableHead>
+                      <TableHead>Impact</TableHead>
+                      <TableHead>Mitigation</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleBlockers.map((blocker) => (
+                      <TableRow key={blocker.id}>
+                        <TableCell className="font-medium">
+                          {blocker.title}
+                        </TableCell>
+                        <TableCell>
+                          {formatStatusLabel(blocker.status)}
+                        </TableCell>
+                        <TableCell>{blocker.ownerTeam}</TableCell>
+                        <TableCell>{blocker.severity}</TableCell>
+                        <TableCell>
+                          {formatNullableDateTime(blocker.dueDate)}
+                        </TableCell>
+                        <TableCell>{blocker.impact}</TableCell>
+                        <TableCell>{blocker.mitigation || "-"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <div className="text-sm text-muted-foreground">
+              {readinessAuditLogs.length} readiness audit{" "}
+              {readinessAuditLogs.length === 1 ? "entry" : "entries"}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-6">
+        <Card>
+          <CardHeader>
             <CardTitle>AI Planning Copilot</CardTitle>
             <CardDescription>
               {aiProposals.length} proposal{aiProposals.length === 1 ? "" : "s"}
@@ -718,15 +1006,27 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
 
 async function loadProjectPageData(projectId: string) {
   try {
-    const [project, stages, planningRecords, aiProposalRecords] =
-      await Promise.all([
-        getProjectForCurrentUser(projectId),
-        listBuildStagesForProject(projectId),
-        listPlanningRecordsForProject(projectId),
-        listAiProposalsForProject(projectId),
-      ]);
+    const [
+      project,
+      stages,
+      planningRecords,
+      aiProposalRecords,
+      readinessRecords,
+    ] = await Promise.all([
+      getProjectForCurrentUser(projectId),
+      listBuildStagesForProject(projectId),
+      listPlanningRecordsForProject(projectId),
+      listAiProposalsForProject(projectId),
+      listReadinessRecordsForProject(projectId),
+    ]);
 
-    return { project, stages, ...planningRecords, ...aiProposalRecords };
+    return {
+      project,
+      stages,
+      ...planningRecords,
+      ...aiProposalRecords,
+      ...readinessRecords,
+    };
   } catch {
     return null;
   }
@@ -787,6 +1087,30 @@ function formatOwnerTeams(processOwnerTeam: string, materialOwnerTeam: string) {
   const owners = [processOwnerTeam, materialOwnerTeam].filter(Boolean);
 
   return owners.length === 0 ? "-" : owners.join(" / ");
+}
+
+function targetLabelFor(
+  targetType: string,
+  targetId: string,
+  input: {
+    matrixEntryLabelById: Map<string, string>;
+    projectName: string;
+    stageNameById: Map<string, string>;
+  },
+) {
+  if (targetType === "project") {
+    return `Project / ${input.projectName}`;
+  }
+
+  if (targetType === "build_stage") {
+    return `Stage / ${input.stageNameById.get(targetId) ?? targetId.slice(0, 8)}`;
+  }
+
+  if (targetType === "build_matrix_entry") {
+    return `Matrix / ${input.matrixEntryLabelById.get(targetId) ?? targetId.slice(0, 8)}`;
+  }
+
+  return `${formatStatusLabel(targetType)} / ${targetId.slice(0, 8)}`;
 }
 
 function formatConfidence(value: number | null) {

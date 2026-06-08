@@ -16,8 +16,14 @@ import {
   upsertBuildQtyAllocation,
 } from "@/lib/domain/projects";
 import {
+  createBlocker,
+  createReadinessSignal,
+  type ReadinessTargetType,
+} from "@/lib/domain/readiness";
+import {
   aiProposalReviewSchema,
   aiStageSummaryProposalCreateSchema,
+  blockerCreateSchema,
   buildMatrixEntryCreateSchema,
   buildQtyAllocationCreateSchema,
   buildStageCreateSchema,
@@ -25,6 +31,7 @@ import {
   demandProfileMappingCreateSchema,
   functionalTeamDemandCreateSchema,
   projectInitSchema,
+  readinessSignalCreateSchema,
 } from "@/lib/validation/planning";
 
 export type WorkspaceActionState = {
@@ -285,6 +292,99 @@ export async function reviewAiProposalAction(
   }
 }
 
+export async function createReadinessSignalAction(
+  _prevState: WorkspaceActionState,
+  formData: FormData,
+): Promise<WorkspaceActionState> {
+  try {
+    const parsed = readinessSignalCreateSchema.parse({
+      projectId: formData.get("projectId"),
+      targetKey: formData.get("targetKey"),
+      status: formData.get("status"),
+      summary: formData.get("summary"),
+      ownerTeam: formData.get("ownerTeam") || undefined,
+      rationale: formData.get("rationale") || undefined,
+    });
+    const target = parseReadinessTargetKey(parsed.targetKey);
+
+    await createReadinessSignal({
+      ownerTeam: parsed.ownerTeam,
+      projectId: parsed.projectId,
+      rationale: parsed.rationale,
+      status: parsed.status,
+      summary: parsed.summary,
+      targetId: target.targetId,
+      targetType: target.targetType,
+    });
+
+    revalidatePath(`/workspace/projects/${parsed.projectId}`);
+    return successState("Readiness signal saved.");
+  } catch (error) {
+    return actionErrorState(error, formData, [
+      "projectId",
+      "targetKey",
+      "status",
+      "summary",
+      "ownerTeam",
+      "rationale",
+    ]);
+  }
+}
+
+export async function createBlockerAction(
+  _prevState: WorkspaceActionState,
+  formData: FormData,
+): Promise<WorkspaceActionState> {
+  try {
+    const parsed = blockerCreateSchema.parse({
+      projectId: formData.get("projectId"),
+      targetKey: formData.get("targetKey"),
+      readinessSignalId: formData.get("readinessSignalId") || undefined,
+      title: formData.get("title"),
+      status: formData.get("status"),
+      severity: formData.get("severity"),
+      ownerTeam: formData.get("ownerTeam"),
+      impact: formData.get("impact"),
+      dueDate: formData.get("dueDate") || undefined,
+      mitigation: formData.get("mitigation") || undefined,
+      decisionNeeded: formData.get("decisionNeeded") === "on",
+    });
+    const target = parseReadinessTargetKey(parsed.targetKey);
+
+    await createBlocker({
+      decisionNeeded: parsed.decisionNeeded,
+      dueDate: parsed.dueDate,
+      impact: parsed.impact,
+      mitigation: parsed.mitigation,
+      ownerTeam: parsed.ownerTeam,
+      projectId: parsed.projectId,
+      readinessSignalId: parsed.readinessSignalId,
+      severity: parsed.severity,
+      status: parsed.status,
+      targetId: target.targetId,
+      targetType: target.targetType,
+      title: parsed.title,
+    });
+
+    revalidatePath(`/workspace/projects/${parsed.projectId}`);
+    return successState("Blocker saved.");
+  } catch (error) {
+    return actionErrorState(error, formData, [
+      "projectId",
+      "targetKey",
+      "readinessSignalId",
+      "title",
+      "status",
+      "severity",
+      "ownerTeam",
+      "impact",
+      "dueDate",
+      "mitigation",
+      "decisionNeeded",
+    ]);
+  }
+}
+
 function actionErrorState(
   error: unknown,
   formData: FormData,
@@ -382,4 +482,15 @@ function successState(message: string): WorkspaceActionState {
     message,
     status: "success",
   };
+}
+
+function parseReadinessTargetKey(value: string): {
+  targetId: string;
+  targetType: ReadinessTargetType;
+} {
+  const separatorIndex = value.indexOf(":");
+  const targetType = value.slice(0, separatorIndex) as ReadinessTargetType;
+  const targetId = value.slice(separatorIndex + 1);
+
+  return { targetId, targetType };
 }
