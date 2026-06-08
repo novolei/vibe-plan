@@ -72,3 +72,15 @@ export const buildMatrixEntryCreateSchema = z.object({
   readinessStatus: z.enum(["greenlight", "at_risk", "blocked"]),
   notes: z.string().trim().optional(),
 });
+
+export const aiStageSummaryProposalCreateSchema = z.object({
+  projectId: z.string().uuid(),
+  buildStageId: z.string().uuid(),
+});
+
+export const aiProposalReviewSchema = z.object({
+  projectId: z.string().uuid(),
+  proposalId: z.string().uuid(),
+  disposition: z.enum(["accepted", "rejected", "revised"]),
+  reviewNotes: z.string().trim().optional(),
+});

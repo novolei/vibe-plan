@@ -9,6 +9,8 @@ import {
   createDemandProfileMappingAction,
   createFunctionalTeamDemandAction,
   createProjectAction,
+  generateStageSummaryProposalAction,
+  reviewAiProposalAction,
   type WorkspaceActionState,
   upsertBuildQtyAllocationAction,
 } from "@/app/workspace/actions";
@@ -490,6 +492,90 @@ export function BuildMatrixEntryForm({
         Save matrix entry
       </SubmitButton>
       <ActionMessage className="sm:col-span-2" state={state} />
+    </form>
+  );
+}
+
+export function AIGenerateStageSummaryForm({
+  projectId,
+  stageOptions,
+}: ProjectScopedFormProps & {
+  stageOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    generateStageSummaryProposalAction,
+    initialWorkspaceActionState,
+  );
+  const disabled = stageOptions.length === 0;
+
+  return (
+    <form action={action} className="grid gap-3" key={formKey(state)}>
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={disabled}
+        name="buildStageId"
+        options={stageOptions}
+        placeholder="Build stage"
+        state={state}
+      />
+      <FieldError name="buildStageId" state={state} />
+      <SubmitButton disabled={disabled} pending={pending}>
+        Generate summary proposal
+      </SubmitButton>
+      <ActionMessage state={state} />
+    </form>
+  );
+}
+
+export function AIProposalReviewForm({
+  projectId,
+  proposalId,
+}: ProjectScopedFormProps & {
+  proposalId: string;
+}) {
+  const [state, action, pending] = useActionState(
+    reviewAiProposalAction,
+    initialWorkspaceActionState,
+  );
+
+  return (
+    <form action={action} className="grid gap-3" key={formKey(state)}>
+      <input name="projectId" type="hidden" value={projectId} />
+      <input name="proposalId" type="hidden" value={proposalId} />
+      <Textarea
+        defaultValue={valueFor(state, "reviewNotes")}
+        name="reviewNotes"
+        placeholder="Review notes"
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          disabled={pending}
+          name="disposition"
+          type="submit"
+          value="accepted"
+        >
+          Accept
+        </Button>
+        <Button
+          disabled={pending}
+          name="disposition"
+          type="submit"
+          value="rejected"
+          variant="outline"
+        >
+          Reject
+        </Button>
+        <Button
+          disabled={pending}
+          name="disposition"
+          type="submit"
+          value="revised"
+          variant="secondary"
+        >
+          Revise
+        </Button>
+      </div>
+      <ActionMessage state={state} />
     </form>
   );
 }

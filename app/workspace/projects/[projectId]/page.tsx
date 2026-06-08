@@ -4,6 +4,8 @@ import { connection } from "next/server";
 
 import { Badge } from "@/components/ui/badge";
 import {
+  AIGenerateStageSummaryForm,
+  AIProposalReviewForm,
   BuildMatrixEntryForm,
   BuildQtyAllocationForm,
   BuildStageForm,
@@ -31,6 +33,7 @@ import {
   listBuildStagesForProject,
   listPlanningRecordsForProject,
 } from "@/lib/domain/projects";
+import { listAiProposalsForProject } from "@/lib/domain/ai-proposals";
 
 type ProjectPageProps = {
   params: Promise<{
@@ -51,6 +54,8 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   const {
     allocationLogs,
     allocations,
+    aiOperations,
+    aiProposals,
     demands,
     matrixEntries,
     mappings,
@@ -98,6 +103,13 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       label: allocationLabelById.get(allocation.id) ?? allocation.id,
       value: allocation.id,
     }));
+  const operationsByProposalId = new Map<string, typeof aiOperations>();
+
+  for (const operation of aiOperations) {
+    const existing = operationsByProposalId.get(operation.aiProposalId) ?? [];
+    existing.push(operation);
+    operationsByProposalId.set(operation.aiProposalId, existing);
+  }
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10">
@@ -548,19 +560,173 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
           </CardContent>
         </Card>
       </section>
+
+      <section className="grid gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>AI Planning Copilot</CardTitle>
+            <CardDescription>
+              {aiProposals.length} proposal{aiProposals.length === 1 ? "" : "s"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+            <div className="rounded-lg border p-4">
+              <div className="mb-4 flex flex-col gap-1">
+                <h2 className="text-sm font-medium">Stage summary</h2>
+                <p className="text-sm text-muted-foreground">
+                  Draft a reviewable stage planning proposal from current
+                  demand, allocation, and matrix records.
+                </p>
+              </div>
+              <AIGenerateStageSummaryForm
+                projectId={project.id}
+                stageOptions={stageOptions}
+              />
+            </div>
+
+            {aiProposals.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No AI proposals.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {aiProposals
+                  .slice()
+                  .reverse()
+                  .map((proposal) => {
+                    const operations =
+                      operationsByProposalId.get(proposal.id) ?? [];
+
+                    return (
+                      <div className="rounded-lg border p-4" key={proposal.id}>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h2 className="text-sm font-medium">
+                                {proposal.title}
+                              </h2>
+                              <Badge variant="secondary">
+                                {formatStatusLabel(proposal.proposalType)}
+                              </Badge>
+                            </div>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              {proposal.summary}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge
+                              variant={
+                                proposal.humanDisposition === "rejected"
+                                  ? "destructive"
+                                  : "secondary"
+                              }
+                            >
+                              {formatStatusLabel(proposal.humanDisposition)}
+                            </Badge>
+                            <Badge variant="secondary">
+                              {formatConfidence(proposal.confidence)}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 md:grid-cols-2">
+                          <div className="rounded-lg bg-muted/40 p-3">
+                            <div className="text-xs font-medium uppercase text-muted-foreground">
+                              Rationale
+                            </div>
+                            <p className="mt-2 text-sm">{proposal.rationale}</p>
+                          </div>
+                          <div className="rounded-lg bg-muted/40 p-3">
+                            <div className="text-xs font-medium uppercase text-muted-foreground">
+                              Source
+                            </div>
+                            <p className="mt-2 text-sm">
+                              {formatSourceContext(proposal.sourceContext)}
+                            </p>
+                          </div>
+                        </div>
+
+                        {operations.length > 0 ? (
+                          <div className="mt-4 overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Operation</TableHead>
+                                  <TableHead>Target</TableHead>
+                                  <TableHead>Validation</TableHead>
+                                  <TableHead>Execution</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {operations.map((operation) => (
+                                  <TableRow key={operation.id}>
+                                    <TableCell>
+                                      {formatStatusLabel(
+                                        operation.operationType,
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {formatTargetLabel(
+                                        operation.targetType,
+                                        operation.targetId,
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {formatStatusLabel(
+                                        operation.validationStatus,
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {formatStatusLabel(
+                                        operation.executionStatus,
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        ) : null}
+
+                        <div className="mt-4 border-t pt-4">
+                          {proposal.humanDisposition === "pending" ? (
+                            <AIProposalReviewForm
+                              projectId={project.id}
+                              proposalId={proposal.id}
+                            />
+                          ) : (
+                            <div className="text-sm text-muted-foreground">
+                              Reviewed{" "}
+                              {formatNullableDateTime(proposal.reviewedAt)}
+                              {proposal.reviewNotes
+                                ? `: ${proposal.reviewNotes}`
+                                : ""}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
     </main>
   );
 }
 
 async function loadProjectPageData(projectId: string) {
   try {
-    const [project, stages, planningRecords] = await Promise.all([
-      getProjectForCurrentUser(projectId),
-      listBuildStagesForProject(projectId),
-      listPlanningRecordsForProject(projectId),
-    ]);
+    const [project, stages, planningRecords, aiProposalRecords] =
+      await Promise.all([
+        getProjectForCurrentUser(projectId),
+        listBuildStagesForProject(projectId),
+        listPlanningRecordsForProject(projectId),
+        listAiProposalsForProject(projectId),
+      ]);
 
-    return { project, stages, ...planningRecords };
+    return { project, stages, ...planningRecords, ...aiProposalRecords };
   } catch {
     return null;
   }
@@ -587,6 +753,10 @@ function formatDateTime(value: Date) {
     minute: "2-digit",
     month: "short",
   }).format(value);
+}
+
+function formatNullableDateTime(value: Date | null) {
+  return value ? formatDateTime(value) : "-";
 }
 
 function formatLogValue(value: unknown) {
@@ -617,4 +787,44 @@ function formatOwnerTeams(processOwnerTeam: string, materialOwnerTeam: string) {
   const owners = [processOwnerTeam, materialOwnerTeam].filter(Boolean);
 
   return owners.length === 0 ? "-" : owners.join(" / ");
+}
+
+function formatConfidence(value: number | null) {
+  return value === null ? "confidence -" : `confidence ${value}%`;
+}
+
+function formatSourceContext(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return "-";
+  }
+
+  const context = value as {
+    allocations?: unknown[];
+    demands?: unknown[];
+    matrixEntries?: unknown[];
+    profiles?: unknown[];
+    stage?: { name?: string };
+  };
+
+  return [
+    context.stage?.name ?? "stage",
+    `${context.demands?.length ?? 0} demands`,
+    `${context.profiles?.length ?? 0} profiles`,
+    `${context.allocations?.length ?? 0} allocations`,
+    `${context.matrixEntries?.length ?? 0} matrix entries`,
+  ].join(" / ");
+}
+
+function formatStatusLabel(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function formatTargetLabel(targetType: string, targetId: string | null) {
+  return targetId
+    ? `${formatStatusLabel(targetType)} / ${targetId.slice(0, 8)}`
+    : formatStatusLabel(targetType);
 }

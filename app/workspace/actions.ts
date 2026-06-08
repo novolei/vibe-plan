@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ZodError } from "zod";
 
+import { reviewAiProposal } from "@/lib/domain/ai-proposals";
+import { generateStageSummaryProposal } from "@/lib/domain/planning-copilot";
 import {
   createBuildMatrixEntry,
   createBuildStage,
@@ -14,6 +16,8 @@ import {
   upsertBuildQtyAllocation,
 } from "@/lib/domain/projects";
 import {
+  aiProposalReviewSchema,
+  aiStageSummaryProposalCreateSchema,
   buildMatrixEntryCreateSchema,
   buildQtyAllocationCreateSchema,
   buildStageCreateSchema,
@@ -232,6 +236,51 @@ export async function createBuildMatrixEntryAction(
       "materialOwnerTeam",
       "readinessStatus",
       "notes",
+    ]);
+  }
+}
+
+export async function generateStageSummaryProposalAction(
+  _prevState: WorkspaceActionState,
+  formData: FormData,
+): Promise<WorkspaceActionState> {
+  try {
+    const parsed = aiStageSummaryProposalCreateSchema.parse({
+      projectId: formData.get("projectId"),
+      buildStageId: formData.get("buildStageId"),
+    });
+
+    await generateStageSummaryProposal(parsed);
+
+    revalidatePath(`/workspace/projects/${parsed.projectId}`);
+    return successState("AI proposal generated.");
+  } catch (error) {
+    return actionErrorState(error, formData, ["projectId", "buildStageId"]);
+  }
+}
+
+export async function reviewAiProposalAction(
+  _prevState: WorkspaceActionState,
+  formData: FormData,
+): Promise<WorkspaceActionState> {
+  try {
+    const parsed = aiProposalReviewSchema.parse({
+      projectId: formData.get("projectId"),
+      proposalId: formData.get("proposalId"),
+      disposition: formData.get("disposition"),
+      reviewNotes: formData.get("reviewNotes") || undefined,
+    });
+
+    await reviewAiProposal(parsed);
+
+    revalidatePath(`/workspace/projects/${parsed.projectId}`);
+    return successState("AI proposal reviewed.");
+  } catch (error) {
+    return actionErrorState(error, formData, [
+      "projectId",
+      "proposalId",
+      "disposition",
+      "reviewNotes",
     ]);
   }
 }
