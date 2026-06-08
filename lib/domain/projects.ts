@@ -13,6 +13,8 @@ import {
 } from "@/db/schema";
 import { db } from "@/db/client";
 import { requireUser } from "@/lib/auth/session";
+import { buildAllocationChangeLogValues } from "@/lib/domain/allocation-change-logs";
+import { buildPlanningWarnings } from "@/lib/domain/planning-rules";
 
 type CreateProjectInput = {
   name: string;
@@ -62,13 +64,6 @@ type CreateBuildQtyAllocationInput = {
   configProfileId: string;
   allocatedQty: number;
   rationale?: string;
-};
-
-type PlanningWarning = {
-  detail: string;
-  id: string;
-  severity: "info" | "warning";
-  title: string;
 };
 
 export async function listProjectsForCurrentUser() {
@@ -380,69 +375,6 @@ export async function upsertBuildQtyAllocation(
   });
 }
 
-function buildPlanningWarnings(input: {
-  allocations: (typeof buildQtyAllocations.$inferSelect)[];
-  demands: (typeof functionalTeamDemands.$inferSelect)[];
-  mappings: (typeof demandProfileMappings.$inferSelect)[];
-  profiles: (typeof configProfiles.$inferSelect)[];
-}): PlanningWarning[] {
-  const warnings: PlanningWarning[] = [];
-  const activeAllocationByProfileId = new Map(
-    input.allocations
-      .filter((allocation) => allocation.status === "active")
-      .map((allocation) => [allocation.configProfileId, allocation]),
-  );
-
-  for (const demand of input.demands) {
-    const mappedQty = input.mappings
-      .filter((mapping) => mapping.functionalTeamDemandId === demand.id)
-      .reduce((sum, mapping) => sum + mapping.contributionQty, 0);
-
-    if (mappedQty !== demand.requestedQty) {
-      warnings.push({
-        detail: `${demand.team} requested ${demand.requestedQty}, mapped ${mappedQty}.`,
-        id: `demand-${demand.id}-mapped-qty`,
-        severity: "warning",
-        title:
-          mappedQty > demand.requestedQty
-            ? "Demand is over-mapped"
-            : "Demand is under-mapped",
-      });
-    }
-  }
-
-  for (const profile of input.profiles) {
-    const mappedQty = input.mappings
-      .filter((mapping) => mapping.configProfileId === profile.id)
-      .reduce((sum, mapping) => sum + mapping.contributionQty, 0);
-    const allocatedQty =
-      activeAllocationByProfileId.get(profile.id)?.allocatedQty ?? 0;
-
-    if (mappedQty !== allocatedQty) {
-      warnings.push({
-        detail: `${profile.productRevision} / ${profile.testPurpose} mapped ${mappedQty}, allocated ${allocatedQty}.`,
-        id: `profile-${profile.id}-allocated-qty`,
-        severity: "warning",
-        title:
-          allocatedQty > mappedQty
-            ? "Allocation exceeds mapped demand"
-            : "Allocation is below mapped demand",
-      });
-    }
-  }
-
-  if (warnings.length === 0 && input.profiles.length > 0) {
-    warnings.push({
-      detail: "Mapped demand and active allocations are currently aligned.",
-      id: "planning-aligned",
-      severity: "info",
-      title: "Planning quantities aligned",
-    });
-  }
-
-  return warnings;
-}
-
 async function writeAllocationChangeLogs(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   input: {
@@ -459,27 +391,13 @@ async function writeAllocationChangeLogs(
     stageId: string;
   },
 ) {
-  const changes = input.changes.filter(
-    (change) => change.beforeValue !== change.afterValue,
-  );
+  const changeLogValues = buildAllocationChangeLogValues(input);
 
-  if (changes.length === 0) {
+  if (changeLogValues.length === 0) {
     return;
   }
 
-  await tx.insert(allocationChangeLogs).values(
-    changes.map((change) => ({
-      actorUserId: input.actorUserId,
-      afterValue: change.afterValue,
-      beforeValue: change.beforeValue,
-      buildQtyAllocationId: input.allocationId,
-      buildStageId: input.stageId,
-      configProfileId: input.configProfileId,
-      fieldName: change.fieldName,
-      projectId: input.projectId,
-      reason: input.reason,
-    })),
-  );
+  await tx.insert(allocationChangeLogs).values(changeLogValues);
 }
 
 async function getBuildStageForCurrentUser(projectId: string, stageId: string) {
