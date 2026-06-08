@@ -120,9 +120,11 @@ export function BuildStageForm({ projectId }: ProjectScopedFormProps) {
 }
 
 export function FunctionalTeamDemandForm({
+  defaultStageId,
   projectId,
   stageOptions,
 }: ProjectScopedFormProps & {
+  defaultStageId?: string;
   stageOptions: Option[];
 }) {
   const [state, action, pending] = useActionState(
@@ -143,6 +145,7 @@ export function FunctionalTeamDemandForm({
         name="buildStageId"
         options={stageOptions}
         placeholder="Build stage"
+        preferredValue={defaultStageId}
         state={state}
       />
       <Input
@@ -203,9 +206,11 @@ export function FunctionalTeamDemandForm({
 }
 
 export function ConfigProfileForm({
+  defaultStageId,
   projectId,
   stageOptions,
 }: ProjectScopedFormProps & {
+  defaultStageId?: string;
   stageOptions: Option[];
 }) {
   const [state, action, pending] = useActionState(
@@ -226,6 +231,7 @@ export function ConfigProfileForm({
         name="buildStageId"
         options={stageOptions}
         placeholder="Build stage"
+        preferredValue={defaultStageId}
         state={state}
       />
       <Input
@@ -501,9 +507,11 @@ export function BuildMatrixEntryForm({
 }
 
 export function AIGenerateStageSummaryForm({
+  defaultStageId,
   projectId,
   stageOptions,
 }: ProjectScopedFormProps & {
+  defaultStageId?: string;
   stageOptions: Option[];
 }) {
   const [state, action, pending] = useActionState(
@@ -520,6 +528,7 @@ export function AIGenerateStageSummaryForm({
         name="buildStageId"
         options={stageOptions}
         placeholder="Build stage"
+        preferredValue={defaultStageId}
         state={state}
       />
       <FieldError name="buildStageId" state={state} />
@@ -775,10 +784,12 @@ export function BlockerForm({
 }
 
 export function ScheduleTaskForm({
+  defaultStageId,
   linkedObjectOptions,
   projectId,
   stageOptions,
 }: ProjectScopedFormProps & {
+  defaultStageId?: string;
   linkedObjectOptions: Option[];
   stageOptions: Option[];
 }) {
@@ -801,6 +812,7 @@ export function ScheduleTaskForm({
         name="buildStageId"
         options={stageOptions}
         placeholder="Build stage"
+        preferredValue={defaultStageId}
         state={state}
       />
       <SelectField
@@ -963,6 +975,7 @@ function SelectField({
   name,
   options,
   placeholder,
+  preferredValue,
   required = true,
   state,
 }: {
@@ -970,15 +983,18 @@ function SelectField({
   name: string;
   options: Option[];
   placeholder: string;
+  preferredValue?: string;
   required?: boolean;
   state: WorkspaceActionState;
 }) {
+  const defaultValue = valueFor(state, name) || preferredValue || "";
+
   return (
     <select
       aria-describedby={fieldErrorId(name)}
       aria-invalid={hasFieldError(state, name)}
       className={selectClassName}
-      defaultValue={valueFor(state, name)}
+      defaultValue={defaultValue}
       disabled={disabled}
       name={name}
       required={required}

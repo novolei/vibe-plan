@@ -1,8 +1,26 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import {
+  AlertTriangle,
+  Bot,
+  CalendarDays,
+  ClipboardList,
+  Factory,
+  FileSpreadsheet,
+  GitBranch,
+  LayoutDashboard,
+  ListChecks,
+  Route,
+  SlidersHorizontal,
+  Target,
+  Workflow,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { BomCsvImportPanel } from "@/components/planning/bom-csv-import-panel";
 import {
   AIGenerateStageSummaryForm,
   AIProposalReviewForm,
@@ -49,10 +67,32 @@ type ProjectPageProps = {
   params: Promise<{
     projectId: string;
   }>;
+  searchParams: Promise<{
+    stageId?: string | string[];
+    step?: string | string[];
+  }>;
 };
 
-export default async function ProjectPage({ params }: ProjectPageProps) {
+const workflowStepIds = [
+  "project",
+  "demand",
+  "profile",
+  "allocation",
+  "matrix",
+  "bom",
+  "schedule",
+  "readiness",
+  "dashboard",
+] as const;
+
+type WorkflowStepId = (typeof workflowStepIds)[number];
+
+export default async function ProjectPage({
+  params,
+  searchParams,
+}: ProjectPageProps) {
   const { projectId } = await params;
+  const resolvedSearchParams = await searchParams;
   await connection();
 
   const projectPageData = await loadProjectPageData(projectId);
@@ -238,701 +278,1484 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     operationsByProposalId.set(operation.aiProposalId, existing);
   }
 
+  const requestedStep = firstSearchParamValue(resolvedSearchParams.step);
+  const activeStep = workflowStepIds.includes(requestedStep as WorkflowStepId)
+    ? (requestedStep as WorkflowStepId)
+    : "dashboard";
+  const requestedStageId = firstSearchParamValue(resolvedSearchParams.stageId);
+  const activeStage =
+    stages.find((stage) => stage.id === requestedStageId) ?? stages[0] ?? null;
+  const activeStageId = activeStage?.id;
+  const stageScopedDemands = activeStageId
+    ? demands.filter((demand) => demand.buildStageId === activeStageId)
+    : demands;
+  const stageScopedProfiles = activeStageId
+    ? profiles.filter((profile) => profile.buildStageId === activeStageId)
+    : profiles;
+  const stageScopedProfileIds = new Set(
+    stageScopedProfiles.map((profile) => profile.id),
+  );
+  const stageScopedAllocations = allocations.filter((allocation) =>
+    stageScopedProfileIds.has(allocation.configProfileId),
+  );
+  const stageScopedMatrixEntries = activeStageId
+    ? matrixEntries.filter((entry) => entry.buildStageId === activeStageId)
+    : matrixEntries;
+  const stageScopedScheduleTasks = activeStageId
+    ? scheduleTasks.filter((task) => task.buildStageId === activeStageId)
+    : scheduleTasks;
+  const stageScopedReadiness =
+    stageReadinessRows.find((row) => row.stage.id === activeStageId)?.status ??
+    computeWorstChildReadiness([
+      ...stageReadinessRows.map((row) => row.status),
+    ]);
+  const totalRequestedQty = stageScopedDemands.reduce(
+    (sum, demand) => sum + demand.requestedQty,
+    0,
+  );
+  const totalAllocatedQty = stageScopedAllocations.reduce(
+    (sum, allocation) => sum + allocation.allocatedQty,
+    0,
+  );
+  const unresolvedWarningCount =
+    planningWarnings.length +
+    readinessWarnings.length +
+    scheduleWarnings.length;
+  const latestAiProposal = aiProposals.at(-1);
+  const workflowSteps: WorkflowStep[] = [
+    {
+      count: stages.length,
+      description: "Project context and build stages",
+      href: projectStepHref(project.id, "project", activeStageId),
+      icon: ClipboardList,
+      id: "project",
+      label: "Project",
+      status: stages.length > 0 ? "ready" : "open",
+    },
+    {
+      count: stageScopedDemands.length,
+      description: "X-function build qty requests",
+      href: projectStepHref(project.id, "demand", activeStageId),
+      icon: Target,
+      id: "demand",
+      label: "Demand",
+      status: stageScopedDemands.length > 0 ? "ready" : "open",
+    },
+    {
+      count: stageScopedProfiles.length,
+      description: "Structured config profiles",
+      href: projectStepHref(project.id, "profile", activeStageId),
+      icon: SlidersHorizontal,
+      id: "profile",
+      label: "Profiles",
+      status: stageScopedProfiles.length > 0 ? "ready" : "open",
+    },
+    {
+      count: stageScopedAllocations.length,
+      description: "Request to allocation decisions",
+      href: projectStepHref(project.id, "allocation", activeStageId),
+      icon: GitBranch,
+      id: "allocation",
+      label: "Allocation",
+      status: stageScopedAllocations.length > 0 ? "ready" : "open",
+    },
+    {
+      count: stageScopedMatrixEntries.length,
+      description: "Process and material mapping",
+      href: projectStepHref(project.id, "matrix", activeStageId),
+      icon: Factory,
+      id: "matrix",
+      label: "Matrix",
+      status: stageScopedMatrixEntries.length > 0 ? "ready" : "open",
+    },
+    {
+      count: null,
+      description: "CSV preview and column validation",
+      href: projectStepHref(project.id, "bom", activeStageId),
+      icon: FileSpreadsheet,
+      id: "bom",
+      label: "BOM CSV",
+      status: "open",
+    },
+    {
+      count: stageScopedScheduleTasks.length,
+      description: "Schedule tasks and dependencies",
+      href: projectStepHref(project.id, "schedule", activeStageId),
+      icon: CalendarDays,
+      id: "schedule",
+      label: "Schedule",
+      status: stageScopedScheduleTasks.length > 0 ? "ready" : "open",
+    },
+    {
+      count: visibleBlockers.length,
+      description: "Greenlight, risk, blockers",
+      href: projectStepHref(project.id, "readiness", activeStageId),
+      icon: ListChecks,
+      id: "readiness",
+      label: "Readiness",
+      status:
+        stageScopedReadiness === "blocked"
+          ? "blocked"
+          : stageScopedReadiness === "at_risk"
+            ? "warning"
+            : "ready",
+    },
+    {
+      count: stageScopedMatrixEntries.length,
+      description: "Final build matrix and timeline",
+      href: projectStepHref(project.id, "dashboard", activeStageId),
+      icon: LayoutDashboard,
+      id: "dashboard",
+      label: "Final",
+      status: unresolvedWarningCount > 0 ? "warning" : "ready",
+    },
+  ];
+
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10">
-      <div className="flex flex-col gap-3">
-        <Link className="text-sm text-muted-foreground" href="/workspace">
-          Workspace
-        </Link>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-3xl font-semibold tracking-normal">
-              {project.name}
-            </h1>
-            <p className="max-w-3xl text-muted-foreground">
-              {project.description}
-            </p>
-          </div>
-          <Badge variant="secondary">{project.status}</Badge>
-        </div>
-      </div>
-
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Build stages</CardTitle>
-            <CardDescription>
-              Define stages with a goal and description before demand intake.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {stages.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No build stages yet. Create EVT, DVT, PVT, Pilot, or a custom
-                stage to continue.
+    <main className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-950">
+      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <header className="rounded-2xl border bg-white px-5 py-5 shadow-sm">
+          <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
+            <div className="min-w-0">
+              <Link
+                className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900"
+                href="/workspace"
+              >
+                <Route className="size-4" aria-hidden="true" />
+                Workspace
+              </Link>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
+                  {project.name}
+                </h1>
+                <Badge variant="secondary">{project.status}</Badge>
               </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Order</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Goal</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {stages.map((stage) => (
-                    <TableRow key={stage.id}>
-                      <TableCell>{stage.stageOrder}</TableCell>
-                      <TableCell className="font-medium">
-                        {stage.name}
-                      </TableCell>
-                      <TableCell>{stage.goal}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{stage.status}</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Create stage</CardTitle>
-            <CardDescription>
-              Template source is optional; all fields can be project overrides.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <BuildStageForm projectId={project.id} />
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Planning warnings</CardTitle>
-            <CardDescription>
-              {planningWarnings.length} signal
-              {planningWarnings.length === 1 ? "" : "s"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {planningWarnings.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No warnings yet. Add demand, mappings, and allocation to start
-                validation.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {planningWarnings.map((warning) => (
-                  <div
-                    className="rounded-lg border p-4 text-sm"
-                    key={warning.id}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="font-medium">{warning.title}</div>
-                      <Badge
-                        variant={
-                          warning.severity === "warning"
-                            ? "destructive"
-                            : "secondary"
-                        }
-                      >
-                        {warning.severity}
-                      </Badge>
-                    </div>
-                    <p className="mt-2 text-muted-foreground">
-                      {warning.detail}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Allocation change log</CardTitle>
-            <CardDescription>
-              {allocationLogs.length} audit{" "}
-              {allocationLogs.length === 1 ? "entry" : "entries"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {allocationLogs.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No allocation edits have been recorded.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>When</TableHead>
-                      <TableHead>Profile</TableHead>
-                      <TableHead>Field</TableHead>
-                      <TableHead>Before</TableHead>
-                      <TableHead>After</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {allocationLogs
-                      .slice()
-                      .reverse()
-                      .slice(0, 8)
-                      .map((log) => (
-                        <TableRow key={log.id}>
-                          <TableCell>{formatDateTime(log.createdAt)}</TableCell>
-                          <TableCell>
-                            {profileLabelById.get(log.configProfileId)}
-                          </TableCell>
-                          <TableCell>{log.fieldName}</TableCell>
-                          <TableCell>
-                            {formatLogValue(log.beforeValue)}
-                          </TableCell>
-                          <TableCell>
-                            {formatLogValue(log.afterValue)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Functional team demands</CardTitle>
-            <CardDescription>
-              {demands.length} request{demands.length === 1 ? "" : "s"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            {demands.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No demand requests.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Team</TableHead>
-                      <TableHead>Stage</TableHead>
-                      <TableHead>Qty</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Purpose</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {demands.map((demand) => (
-                      <TableRow key={demand.id}>
-                        <TableCell className="font-medium">
-                          {demand.team}
-                        </TableCell>
-                        <TableCell>
-                          {stageNameById.get(demand.buildStageId)}
-                        </TableCell>
-                        <TableCell>{demand.requestedQty}</TableCell>
-                        <TableCell>{demand.priority}</TableCell>
-                        <TableCell>{demand.purpose}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            <FunctionalTeamDemandForm
-              projectId={project.id}
-              stageOptions={stageOptions}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Config profiles</CardTitle>
-            <CardDescription>
-              {profiles.length} profile{profiles.length === 1 ? "" : "s"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            {profiles.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No config profiles.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Profile</TableHead>
-                      <TableHead>Stage</TableHead>
-                      <TableHead>Process</TableHead>
-                      <TableHead>Material</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {profiles.map((profile) => (
-                      <TableRow key={profile.id}>
-                        <TableCell className="font-medium">
-                          {formatProfileLabel(profile)}
-                        </TableCell>
-                        <TableCell>
-                          {stageNameById.get(profile.buildStageId)}
-                        </TableCell>
-                        <TableCell>{profile.processVariant}</TableCell>
-                        <TableCell>{profile.materialVariant}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            <ConfigProfileForm
-              projectId={project.id}
-              stageOptions={stageOptions}
-            />
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Demand to profile mapping</CardTitle>
-            <CardDescription>
-              {mappings.length} mapping{mappings.length === 1 ? "" : "s"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            {mappings.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No demand mappings.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Demand</TableHead>
-                      <TableHead>Profile</TableHead>
-                      <TableHead>Qty</TableHead>
-                      <TableHead>Weight</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mappings.map((mapping) => (
-                      <TableRow key={mapping.id}>
-                        <TableCell>
-                          {demandLabelById.get(mapping.functionalTeamDemandId)}
-                        </TableCell>
-                        <TableCell>
-                          {profileLabelById.get(mapping.configProfileId)}
-                        </TableCell>
-                        <TableCell>{mapping.contributionQty}</TableCell>
-                        <TableCell>{mapping.weight ?? "-"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            <DemandProfileMappingForm
-              demandOptions={demandOptions}
-              profileOptions={profileOptions}
-              projectId={project.id}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Build qty allocations</CardTitle>
-            <CardDescription>
-              {allocations.length} allocation
-              {allocations.length === 1 ? "" : "s"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            {profiles.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No profiles for allocation.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Profile</TableHead>
-                      <TableHead>Allocated</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Rationale</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {profiles.map((profile) => {
-                      const allocation = activeAllocationByProfileId.get(
-                        profile.id,
-                      );
-
-                      return (
-                        <TableRow key={profile.id}>
-                          <TableCell className="font-medium">
-                            {profileLabelById.get(profile.id)}
-                          </TableCell>
-                          <TableCell>{allocation?.allocatedQty ?? 0}</TableCell>
-                          <TableCell>
-                            {allocation?.status ?? "unallocated"}
-                          </TableCell>
-                          <TableCell>{allocation?.rationale ?? "-"}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            <BuildQtyAllocationForm
-              profileOptions={profileOptions}
-              projectId={project.id}
-            />
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Schedule extension</CardTitle>
-            <CardDescription>
-              {scheduleTasks.length} task{scheduleTasks.length === 1 ? "" : "s"}{" "}
-              / {scheduleDependencies.length} dependenc
-              {scheduleDependencies.length === 1 ? "y" : "ies"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            {scheduleWarnings.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No schedule dependency warnings.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {scheduleWarnings.map((warning) => (
-                  <div className="rounded-lg border p-4" key={warning.id}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-medium">{warning.title}</div>
-                      <Badge
-                        variant={
-                          warning.severity === "warning"
-                            ? "destructive"
-                            : "secondary"
-                        }
-                      >
-                        {warning.severity}
-                      </Badge>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {warning.detail}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="grid gap-6 xl:grid-cols-2">
-              <div className="rounded-lg border p-4">
-                <div className="mb-4 text-sm font-medium">
-                  Add schedule task
-                </div>
-                <ScheduleTaskForm
-                  linkedObjectOptions={scheduleLinkedObjectOptions}
-                  projectId={project.id}
-                  stageOptions={stageOptions}
-                />
-              </div>
-              <div className="rounded-lg border p-4">
-                <div className="mb-4 text-sm font-medium">Add dependency</div>
-                <ScheduleDependencyForm
-                  projectId={project.id}
-                  taskOptions={scheduleTaskOptions}
-                />
-              </div>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                {project.description}
+              </p>
             </div>
 
-            {scheduleTasks.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No schedule tasks.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Task</TableHead>
-                      <TableHead>Stage</TableHead>
-                      <TableHead>Linked object</TableHead>
-                      <TableHead>Planned</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Owner</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {scheduleTasks.map((task) => {
-                      const primaryLink = scheduleLinksByTaskId.get(
-                        task.id,
-                      )?.[0];
+            <div className="grid gap-2 sm:grid-cols-4 2xl:min-w-[520px]">
+              <MetricTile label="Requested" value={totalRequestedQty} />
+              <MetricTile label="Allocated" value={totalAllocatedQty} />
+              <MetricTile
+                label="Readiness"
+                tone={readinessTone(stageScopedReadiness)}
+                value={formatReadinessLabel(stageScopedReadiness)}
+              />
+              <MetricTile
+                label="Signals"
+                tone={unresolvedWarningCount > 0 ? "warning" : "good"}
+                value={unresolvedWarningCount}
+              />
+            </div>
+          </div>
 
-                      return (
-                        <TableRow key={task.id}>
-                          <TableCell className="font-medium">
-                            {task.title}
-                          </TableCell>
-                          <TableCell>
-                            {stageNameById.get(task.buildStageId)}
-                          </TableCell>
-                          <TableCell>
-                            {primaryLink
-                              ? scheduleLinkedObjectLabel(
-                                  primaryLink.linkedObjectType,
-                                  primaryLink.linkedObjectId,
-                                  {
-                                    allocationLabelById,
-                                    blockerTitleById: new Map(
-                                      blockers.map((blocker) => [
-                                        blocker.id,
-                                        blocker.title,
-                                      ]),
-                                    ),
-                                    matrixEntryLabelById,
-                                    profileLabelById,
-                                    projectName: project.name,
-                                    readinessSignalLabelById: new Map(
-                                      readinessSignals.map((signal) => [
-                                        signal.id,
-                                        signal.summary,
-                                      ]),
-                                    ),
-                                    stageNameById,
-                                  },
-                                )
-                              : "-"}
-                          </TableCell>
-                          <TableCell>
+          <div className="mt-5 flex flex-col gap-3 border-t pt-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {stages.length === 0 ? (
+                <Badge variant="outline">No stage yet</Badge>
+              ) : (
+                stages.map((stage) => (
+                  <Link
+                    className={[
+                      "rounded-lg border px-3 py-1.5 text-sm transition-colors",
+                      stage.id === activeStageId
+                        ? "border-sky-300 bg-sky-50 text-sky-900"
+                        : "bg-white text-slate-600 hover:bg-slate-50",
+                    ].join(" ")}
+                    href={projectStepHref(project.id, activeStep, stage.id)}
+                    key={stage.id}
+                  >
+                    {stage.name}
+                  </Link>
+                ))
+              )}
+            </div>
+            <div className="text-sm text-slate-500">
+              Active stage:{" "}
+              <span className="font-medium text-slate-900">
+                {activeStage?.name ?? "Create a stage to begin"}
+              </span>
+            </div>
+          </div>
+        </header>
+
+        <section className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)] 2xl:grid-cols-[260px_minmax(0,1fr)_330px]">
+          <aside className="h-fit rounded-2xl border bg-white p-3 shadow-sm lg:sticky lg:top-4">
+            <div className="mb-3 flex items-center gap-2 px-2 text-sm font-medium text-slate-900">
+              <Workflow className="size-4 text-sky-700" aria-hidden="true" />
+              ADR workflow
+            </div>
+            <nav className="grid gap-1">
+              {workflowSteps.map((step, index) => (
+                <WorkflowStepLink
+                  active={activeStep === step.id}
+                  index={index + 1}
+                  key={step.id}
+                  step={step}
+                />
+              ))}
+            </nav>
+          </aside>
+
+          <div className="grid min-w-0 gap-6">
+            <section
+              className={sectionClass(
+                activeStep,
+                "project",
+                "grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]",
+              )}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle>Build stages</CardTitle>
+                  <CardDescription>
+                    Define stages with a goal and description before demand
+                    intake.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {stages.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No build stages yet. Create EVT, DVT, PVT, Pilot, or a
+                      custom stage to continue.
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Order</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Goal</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {stages.map((stage) => (
+                          <TableRow key={stage.id}>
+                            <TableCell>{stage.stageOrder}</TableCell>
+                            <TableCell className="font-medium">
+                              {stage.name}
+                            </TableCell>
+                            <TableCell>{stage.goal}</TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">{stage.status}</Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Create stage</CardTitle>
+                  <CardDescription>
+                    Template source is optional; all fields can be project
+                    overrides.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <BuildStageForm projectId={project.id} />
+                </CardContent>
+              </Card>
+            </section>
+
+            <section
+              className={sectionClass(
+                activeStep,
+                "dashboard",
+                "grid gap-6 xl:grid-cols-2",
+              )}
+            >
+              <Card className="xl:col-span-2">
+                <CardHeader>
+                  <CardTitle>Final dashboard</CardTitle>
+                  <CardDescription>
+                    Consolidated build matrix, schedule, readiness, and
+                    allocation posture for {activeStage?.name ?? "all stages"}.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-4">
+                  <MetricTile
+                    label="Profiles"
+                    value={stageScopedProfiles.length}
+                  />
+                  <MetricTile
+                    label="Matrix rows"
+                    value={stageScopedMatrixEntries.length}
+                  />
+                  <MetricTile
+                    label="Schedule tasks"
+                    value={stageScopedScheduleTasks.length}
+                  />
+                  <MetricTile
+                    label="Stage readiness"
+                    tone={readinessTone(stageScopedReadiness)}
+                    value={formatReadinessLabel(stageScopedReadiness)}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Final build matrix</CardTitle>
+                  <CardDescription>
+                    Process and material mapping for allocated profiles.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {stageScopedMatrixEntries.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No matrix rows for this stage yet.
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Allocation</TableHead>
+                          <TableHead>Process</TableHead>
+                          <TableHead>Material</TableHead>
+                          <TableHead>Readiness</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {stageScopedMatrixEntries.map((entry) => (
+                          <TableRow key={entry.id}>
+                            <TableCell className="font-medium">
+                              {allocationLabelById.get(
+                                entry.buildQtyAllocationId,
+                              )}
+                            </TableCell>
+                            <TableCell>{entry.buildProcessRoute}</TableCell>
+                            <TableCell>{entry.keyMaterialVariant}</TableCell>
+                            <TableCell>
+                              <ReadinessBadge status={entry.readinessStatus} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Schedule preview</CardTitle>
+                  <CardDescription>
+                    Timeline-ready task list before full Gantt visualization.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {stageScopedScheduleTasks.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No schedule tasks for this stage yet.
+                    </div>
+                  ) : (
+                    <div className="grid gap-3">
+                      {stageScopedScheduleTasks.map((task) => (
+                        <div
+                          className="grid gap-3 rounded-lg border bg-slate-50/80 p-3 md:grid-cols-[minmax(0,1fr)_180px_auto]"
+                          key={task.id}
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium">
+                              {task.title}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {stageNameById.get(task.buildStageId)} /{" "}
+                              {task.priority}
+                            </div>
+                          </div>
+                          <div className="text-sm text-slate-600">
                             {formatDateOnly(task.plannedStartDate)} -{" "}
                             {formatDateOnly(task.plannedEndDate)}
-                          </TableCell>
-                          <TableCell>
+                          </div>
+                          <Badge variant="secondary">
                             {formatStatusLabel(task.status)}
-                          </TableCell>
-                          <TableCell>{task.ownerUserId}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            {scheduleDependencies.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No schedule dependencies.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Predecessor</TableHead>
-                      <TableHead>Successor</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Lag</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {scheduleDependencies.map((dependency) => (
-                      <TableRow key={dependency.id}>
-                        <TableCell>
-                          {scheduleTaskById.get(dependency.predecessorTaskId)
-                            ?.title ?? "-"}
-                        </TableCell>
-                        <TableCell>
-                          {scheduleTaskById.get(dependency.successorTaskId)
-                            ?.title ?? "-"}
-                        </TableCell>
-                        <TableCell>
-                          {formatStatusLabel(dependency.dependencyType)}
-                        </TableCell>
-                        <TableCell>{dependency.lagDays}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            <div className="text-sm text-muted-foreground">
-              {scheduleAuditLogs.length} schedule audit{" "}
-              {scheduleAuditLogs.length === 1 ? "entry" : "entries"}
-            </div>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Build matrix</CardTitle>
-            <CardDescription>
-              {matrixEntries.length} process/material mapping
-              {matrixEntries.length === 1 ? "" : "s"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            {allocations.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                Add build qty allocations before mapping process routes and
-                material variants.
-              </div>
-            ) : matrixEntries.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No build matrix entries. Map each allocated profile to its
-                process route and key material variant.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Allocation</TableHead>
-                      <TableHead>Process route</TableHead>
-                      <TableHead>Material variant</TableHead>
-                      <TableHead>Readiness</TableHead>
-                      <TableHead>Owners</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {matrixEntries.map((entry) => (
-                      <TableRow key={entry.id}>
-                        <TableCell className="font-medium">
-                          {allocationLabelById.get(entry.buildQtyAllocationId)}
-                        </TableCell>
-                        <TableCell>{entry.buildProcessRoute}</TableCell>
-                        <TableCell>{entry.keyMaterialVariant}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              entry.readinessStatus === "blocked"
-                                ? "destructive"
-                                : "secondary"
-                            }
-                          >
-                            {formatReadinessLabel(entry.readinessStatus)}
                           </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {formatOwnerTeams(
-                            entry.processOwnerTeam,
-                            entry.materialOwnerTeam,
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-            <BuildMatrixEntryForm
-              allocationOptions={allocationOptions}
-              projectId={project.id}
-            />
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Readiness and blockers</CardTitle>
-            <CardDescription>
-              {readinessSignals.length} signal
-              {readinessSignals.length === 1 ? "" : "s"} /{" "}
-              {visibleBlockers.length} active blocker
-              {visibleBlockers.length === 1 ? "" : "s"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            <div className="grid gap-4 xl:grid-cols-3">
-              <div className="rounded-lg border p-4 xl:col-span-2">
-                <div className="mb-3 text-sm font-medium">
-                  Stage readiness summary
-                </div>
-                {stageReadinessRows.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                    No stages for readiness rollup.
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Stage</TableHead>
-                        <TableHead>Rollup</TableHead>
-                        <TableHead>Signals</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {stageReadinessRows.map((row) => (
-                        <TableRow key={row.stage.id}>
-                          <TableCell className="font-medium">
-                            {row.stage.name}
-                          </TableCell>
-                          <TableCell>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Planning warnings</CardTitle>
+                  <CardDescription>
+                    {planningWarnings.length} signal
+                    {planningWarnings.length === 1 ? "" : "s"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {planningWarnings.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No warnings yet. Add demand, mappings, and allocation to
+                      start validation.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {planningWarnings.map((warning) => (
+                        <div
+                          className="rounded-lg border p-4 text-sm"
+                          key={warning.id}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-medium">{warning.title}</div>
                             <Badge
                               variant={
-                                row.status === "blocked"
+                                warning.severity === "warning"
                                   ? "destructive"
                                   : "secondary"
                               }
                             >
-                              {formatReadinessLabel(row.status)}
+                              {warning.severity}
                             </Badge>
-                          </TableCell>
-                          <TableCell>{row.signalCount}</TableCell>
-                        </TableRow>
+                          </div>
+                          <p className="mt-2 text-muted-foreground">
+                            {warning.detail}
+                          </p>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-              <div className="rounded-lg border p-4">
-                <div className="mb-3 text-sm font-medium">
-                  Readiness warnings
+              <Card>
+                <CardHeader>
+                  <CardTitle>Allocation change log</CardTitle>
+                  <CardDescription>
+                    {allocationLogs.length} audit{" "}
+                    {allocationLogs.length === 1 ? "entry" : "entries"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {allocationLogs.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No allocation edits have been recorded.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>When</TableHead>
+                            <TableHead>Profile</TableHead>
+                            <TableHead>Field</TableHead>
+                            <TableHead>Before</TableHead>
+                            <TableHead>After</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {allocationLogs
+                            .slice()
+                            .reverse()
+                            .slice(0, 8)
+                            .map((log) => (
+                              <TableRow key={log.id}>
+                                <TableCell>
+                                  {formatDateTime(log.createdAt)}
+                                </TableCell>
+                                <TableCell>
+                                  {profileLabelById.get(log.configProfileId)}
+                                </TableCell>
+                                <TableCell>{log.fieldName}</TableCell>
+                                <TableCell>
+                                  {formatLogValue(log.beforeValue)}
+                                </TableCell>
+                                <TableCell>
+                                  {formatLogValue(log.afterValue)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+
+            <section
+              className={sectionClass(
+                activeStep,
+                "demand",
+                "profile",
+                "grid gap-6",
+              )}
+            >
+              <Card className={activeStep === "demand" ? "" : "hidden"}>
+                <CardHeader>
+                  <CardTitle>Functional team demands</CardTitle>
+                  <CardDescription>
+                    {demands.length} request{demands.length === 1 ? "" : "s"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-5">
+                  {demands.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No demand requests.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Team</TableHead>
+                            <TableHead>Stage</TableHead>
+                            <TableHead>Qty</TableHead>
+                            <TableHead>Priority</TableHead>
+                            <TableHead>Purpose</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {demands.map((demand) => (
+                            <TableRow key={demand.id}>
+                              <TableCell className="font-medium">
+                                {demand.team}
+                              </TableCell>
+                              <TableCell>
+                                {stageNameById.get(demand.buildStageId)}
+                              </TableCell>
+                              <TableCell>{demand.requestedQty}</TableCell>
+                              <TableCell>{demand.priority}</TableCell>
+                              <TableCell>{demand.purpose}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  <FunctionalTeamDemandForm
+                    defaultStageId={activeStageId}
+                    projectId={project.id}
+                    stageOptions={stageOptions}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card className={activeStep === "profile" ? "" : "hidden"}>
+                <CardHeader>
+                  <CardTitle>Config profiles</CardTitle>
+                  <CardDescription>
+                    {profiles.length} profile{profiles.length === 1 ? "" : "s"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-5">
+                  {profiles.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No config profiles.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Profile</TableHead>
+                            <TableHead>Stage</TableHead>
+                            <TableHead>Process</TableHead>
+                            <TableHead>Material</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {profiles.map((profile) => (
+                            <TableRow key={profile.id}>
+                              <TableCell className="font-medium">
+                                {formatProfileLabel(profile)}
+                              </TableCell>
+                              <TableCell>
+                                {stageNameById.get(profile.buildStageId)}
+                              </TableCell>
+                              <TableCell>{profile.processVariant}</TableCell>
+                              <TableCell>{profile.materialVariant}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  <ConfigProfileForm
+                    defaultStageId={activeStageId}
+                    projectId={project.id}
+                    stageOptions={stageOptions}
+                  />
+                </CardContent>
+              </Card>
+            </section>
+
+            <section
+              className={sectionClass(
+                activeStep,
+                "allocation",
+                "grid gap-6 xl:grid-cols-2",
+              )}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle>Demand to profile mapping</CardTitle>
+                  <CardDescription>
+                    {mappings.length} mapping{mappings.length === 1 ? "" : "s"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-5">
+                  {mappings.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No demand mappings.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Demand</TableHead>
+                            <TableHead>Profile</TableHead>
+                            <TableHead>Qty</TableHead>
+                            <TableHead>Weight</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {mappings.map((mapping) => (
+                            <TableRow key={mapping.id}>
+                              <TableCell>
+                                {demandLabelById.get(
+                                  mapping.functionalTeamDemandId,
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {profileLabelById.get(mapping.configProfileId)}
+                              </TableCell>
+                              <TableCell>{mapping.contributionQty}</TableCell>
+                              <TableCell>{mapping.weight ?? "-"}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  <DemandProfileMappingForm
+                    demandOptions={demandOptions}
+                    profileOptions={profileOptions}
+                    projectId={project.id}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Build qty allocations</CardTitle>
+                  <CardDescription>
+                    {allocations.length} allocation
+                    {allocations.length === 1 ? "" : "s"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-5">
+                  {profiles.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No profiles for allocation.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Profile</TableHead>
+                            <TableHead>Allocated</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Rationale</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {profiles.map((profile) => {
+                            const allocation = activeAllocationByProfileId.get(
+                              profile.id,
+                            );
+
+                            return (
+                              <TableRow key={profile.id}>
+                                <TableCell className="font-medium">
+                                  {profileLabelById.get(profile.id)}
+                                </TableCell>
+                                <TableCell>
+                                  {allocation?.allocatedQty ?? 0}
+                                </TableCell>
+                                <TableCell>
+                                  {allocation?.status ?? "unallocated"}
+                                </TableCell>
+                                <TableCell>
+                                  {allocation?.rationale ?? "-"}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  <BuildQtyAllocationForm
+                    profileOptions={profileOptions}
+                    projectId={project.id}
+                  />
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className={sectionClass(activeStep, "bom", "grid gap-6")}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>BOM CSV import</CardTitle>
+                  <CardDescription>
+                    Preview process/material BOM rows before a future backend
+                    import commits them to the build matrix.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <BomCsvImportPanel />
+                </CardContent>
+              </Card>
+            </section>
+
+            <section
+              className={sectionClass(activeStep, "schedule", "grid gap-6")}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle>Schedule extension</CardTitle>
+                  <CardDescription>
+                    {scheduleTasks.length} task
+                    {scheduleTasks.length === 1 ? "" : "s"} /{" "}
+                    {scheduleDependencies.length} dependenc
+                    {scheduleDependencies.length === 1 ? "y" : "ies"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-6">
+                  {scheduleWarnings.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No schedule dependency warnings.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {scheduleWarnings.map((warning) => (
+                        <div className="rounded-lg border p-4" key={warning.id}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-medium">
+                              {warning.title}
+                            </div>
+                            <Badge
+                              variant={
+                                warning.severity === "warning"
+                                  ? "destructive"
+                                  : "secondary"
+                              }
+                            >
+                              {warning.severity}
+                            </Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {warning.detail}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="grid gap-6 xl:grid-cols-2">
+                    <div className="rounded-lg border p-4">
+                      <div className="mb-4 text-sm font-medium">
+                        Add schedule task
+                      </div>
+                      <ScheduleTaskForm
+                        defaultStageId={activeStageId}
+                        linkedObjectOptions={scheduleLinkedObjectOptions}
+                        projectId={project.id}
+                        stageOptions={stageOptions}
+                      />
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <div className="mb-4 text-sm font-medium">
+                        Add dependency
+                      </div>
+                      <ScheduleDependencyForm
+                        projectId={project.id}
+                        taskOptions={scheduleTaskOptions}
+                      />
+                    </div>
+                  </div>
+
+                  {scheduleTasks.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No schedule tasks.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Task</TableHead>
+                            <TableHead>Stage</TableHead>
+                            <TableHead>Linked object</TableHead>
+                            <TableHead>Planned</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Owner</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {scheduleTasks.map((task) => {
+                            const primaryLink = scheduleLinksByTaskId.get(
+                              task.id,
+                            )?.[0];
+
+                            return (
+                              <TableRow key={task.id}>
+                                <TableCell className="font-medium">
+                                  {task.title}
+                                </TableCell>
+                                <TableCell>
+                                  {stageNameById.get(task.buildStageId)}
+                                </TableCell>
+                                <TableCell>
+                                  {primaryLink
+                                    ? scheduleLinkedObjectLabel(
+                                        primaryLink.linkedObjectType,
+                                        primaryLink.linkedObjectId,
+                                        {
+                                          allocationLabelById,
+                                          blockerTitleById: new Map(
+                                            blockers.map((blocker) => [
+                                              blocker.id,
+                                              blocker.title,
+                                            ]),
+                                          ),
+                                          matrixEntryLabelById,
+                                          profileLabelById,
+                                          projectName: project.name,
+                                          readinessSignalLabelById: new Map(
+                                            readinessSignals.map((signal) => [
+                                              signal.id,
+                                              signal.summary,
+                                            ]),
+                                          ),
+                                          stageNameById,
+                                        },
+                                      )
+                                    : "-"}
+                                </TableCell>
+                                <TableCell>
+                                  {formatDateOnly(task.plannedStartDate)} -{" "}
+                                  {formatDateOnly(task.plannedEndDate)}
+                                </TableCell>
+                                <TableCell>
+                                  {formatStatusLabel(task.status)}
+                                </TableCell>
+                                <TableCell>{task.ownerUserId}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  {scheduleDependencies.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No schedule dependencies.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Predecessor</TableHead>
+                            <TableHead>Successor</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Lag</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {scheduleDependencies.map((dependency) => (
+                            <TableRow key={dependency.id}>
+                              <TableCell>
+                                {scheduleTaskById.get(
+                                  dependency.predecessorTaskId,
+                                )?.title ?? "-"}
+                              </TableCell>
+                              <TableCell>
+                                {scheduleTaskById.get(
+                                  dependency.successorTaskId,
+                                )?.title ?? "-"}
+                              </TableCell>
+                              <TableCell>
+                                {formatStatusLabel(dependency.dependencyType)}
+                              </TableCell>
+                              <TableCell>{dependency.lagDays}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  <div className="text-sm text-muted-foreground">
+                    {scheduleAuditLogs.length} schedule audit{" "}
+                    {scheduleAuditLogs.length === 1 ? "entry" : "entries"}
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section
+              className={sectionClass(activeStep, "matrix", "grid gap-6")}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle>Build matrix</CardTitle>
+                  <CardDescription>
+                    {matrixEntries.length} process/material mapping
+                    {matrixEntries.length === 1 ? "" : "s"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-5">
+                  {allocations.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      Add build qty allocations before mapping process routes
+                      and material variants.
+                    </div>
+                  ) : matrixEntries.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No build matrix entries. Map each allocated profile to its
+                      process route and key material variant.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Allocation</TableHead>
+                            <TableHead>Process route</TableHead>
+                            <TableHead>Material variant</TableHead>
+                            <TableHead>Readiness</TableHead>
+                            <TableHead>Owners</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {matrixEntries.map((entry) => (
+                            <TableRow key={entry.id}>
+                              <TableCell className="font-medium">
+                                {allocationLabelById.get(
+                                  entry.buildQtyAllocationId,
+                                )}
+                              </TableCell>
+                              <TableCell>{entry.buildProcessRoute}</TableCell>
+                              <TableCell>{entry.keyMaterialVariant}</TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    entry.readinessStatus === "blocked"
+                                      ? "destructive"
+                                      : "secondary"
+                                  }
+                                >
+                                  {formatReadinessLabel(entry.readinessStatus)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {formatOwnerTeams(
+                                  entry.processOwnerTeam,
+                                  entry.materialOwnerTeam,
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  <BuildMatrixEntryForm
+                    allocationOptions={allocationOptions}
+                    projectId={project.id}
+                  />
+                </CardContent>
+              </Card>
+            </section>
+
+            <section
+              className={sectionClass(activeStep, "readiness", "grid gap-6")}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle>Readiness and blockers</CardTitle>
+                  <CardDescription>
+                    {readinessSignals.length} signal
+                    {readinessSignals.length === 1 ? "" : "s"} /{" "}
+                    {visibleBlockers.length} active blocker
+                    {visibleBlockers.length === 1 ? "" : "s"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-6">
+                  <div className="grid gap-4 xl:grid-cols-3">
+                    <div className="rounded-lg border p-4 xl:col-span-2">
+                      <div className="mb-3 text-sm font-medium">
+                        Stage readiness summary
+                      </div>
+                      {stageReadinessRows.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                          No stages for readiness rollup.
+                        </div>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Stage</TableHead>
+                              <TableHead>Rollup</TableHead>
+                              <TableHead>Signals</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {stageReadinessRows.map((row) => (
+                              <TableRow key={row.stage.id}>
+                                <TableCell className="font-medium">
+                                  {row.stage.name}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={
+                                      row.status === "blocked"
+                                        ? "destructive"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {formatReadinessLabel(row.status)}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>{row.signalCount}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </div>
+
+                    <div className="rounded-lg border p-4">
+                      <div className="mb-3 text-sm font-medium">
+                        Readiness warnings
+                      </div>
+                      {readinessWarnings.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                          No readiness warnings.
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          {readinessWarnings.map((warning) => (
+                            <div
+                              className="rounded-lg border p-3"
+                              key={warning.id}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-sm font-medium">
+                                  {warning.title}
+                                </div>
+                                <Badge
+                                  variant={
+                                    warning.severity === "warning"
+                                      ? "destructive"
+                                      : "secondary"
+                                  }
+                                >
+                                  {warning.severity}
+                                </Badge>
+                              </div>
+                              <p className="mt-2 text-sm text-muted-foreground">
+                                {warning.detail}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-6 xl:grid-cols-2">
+                    <div className="rounded-lg border p-4">
+                      <div className="mb-4 text-sm font-medium">
+                        Add readiness signal
+                      </div>
+                      <ReadinessSignalForm
+                        projectId={project.id}
+                        targetOptions={readinessTargetOptions}
+                      />
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <div className="mb-4 text-sm font-medium">
+                        Add blocker
+                      </div>
+                      <BlockerForm
+                        projectId={project.id}
+                        readinessSignalOptions={readinessSignalOptions}
+                        targetOptions={readinessTargetOptions}
+                      />
+                    </div>
+                  </div>
+
+                  {readinessSignals.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No readiness signals.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Target</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Owner</TableHead>
+                            <TableHead>Summary</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {readinessSignals.map((signal) => (
+                            <TableRow key={signal.id}>
+                              <TableCell>
+                                {targetLabelFor(
+                                  signal.targetType,
+                                  signal.targetId,
+                                  {
+                                    matrixEntryLabelById: new Map(
+                                      matrixEntries.map((entry) => [
+                                        entry.id,
+                                        allocationLabelById.get(
+                                          entry.buildQtyAllocationId,
+                                        ) ?? entry.id,
+                                      ]),
+                                    ),
+                                    projectName: project.name,
+                                    stageNameById,
+                                  },
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    signal.status === "blocked"
+                                      ? "destructive"
+                                      : "secondary"
+                                  }
+                                >
+                                  {formatReadinessLabel(signal.status)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{signal.ownerTeam || "-"}</TableCell>
+                              <TableCell>{signal.summary}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  {visibleBlockers.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No active blockers.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Blocker</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Owner</TableHead>
+                            <TableHead>Severity</TableHead>
+                            <TableHead>Due</TableHead>
+                            <TableHead>Impact</TableHead>
+                            <TableHead>Mitigation</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {visibleBlockers.map((blocker) => (
+                            <TableRow key={blocker.id}>
+                              <TableCell className="font-medium">
+                                {blocker.title}
+                              </TableCell>
+                              <TableCell>
+                                {formatStatusLabel(blocker.status)}
+                              </TableCell>
+                              <TableCell>{blocker.ownerTeam}</TableCell>
+                              <TableCell>{blocker.severity}</TableCell>
+                              <TableCell>
+                                {formatNullableDateTime(blocker.dueDate)}
+                              </TableCell>
+                              <TableCell>{blocker.impact}</TableCell>
+                              <TableCell>{blocker.mitigation || "-"}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  <div className="text-sm text-muted-foreground">
+                    {readinessAuditLogs.length} readiness audit{" "}
+                    {readinessAuditLogs.length === 1 ? "entry" : "entries"}
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className="hidden">
+              <Card>
+                <CardHeader>
+                  <CardTitle>AI Planning Copilot</CardTitle>
+                  <CardDescription>
+                    {aiProposals.length} proposal
+                    {aiProposals.length === 1 ? "" : "s"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+                  <div className="rounded-lg border p-4">
+                    <div className="mb-4 flex flex-col gap-1">
+                      <h2 className="text-sm font-medium">Stage summary</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Draft a reviewable stage planning proposal from current
+                        demand, allocation, and matrix records.
+                      </p>
+                    </div>
+                    <AIGenerateStageSummaryForm
+                      defaultStageId={activeStageId}
+                      projectId={project.id}
+                      stageOptions={stageOptions}
+                    />
+                  </div>
+
+                  {aiProposals.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No AI proposals.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      {aiProposals
+                        .slice()
+                        .reverse()
+                        .map((proposal) => {
+                          const operations =
+                            operationsByProposalId.get(proposal.id) ?? [];
+
+                          return (
+                            <div
+                              className="rounded-lg border p-4"
+                              key={proposal.id}
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h2 className="text-sm font-medium">
+                                      {proposal.title}
+                                    </h2>
+                                    <Badge variant="secondary">
+                                      {formatStatusLabel(proposal.proposalType)}
+                                    </Badge>
+                                  </div>
+                                  <p className="mt-2 text-sm text-muted-foreground">
+                                    {proposal.summary}
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge
+                                    variant={
+                                      proposal.humanDisposition === "rejected"
+                                        ? "destructive"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {formatStatusLabel(
+                                      proposal.humanDisposition,
+                                    )}
+                                  </Badge>
+                                  <Badge variant="secondary">
+                                    {formatConfidence(proposal.confidence)}
+                                  </Badge>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                <div className="rounded-lg bg-muted/40 p-3">
+                                  <div className="text-xs font-medium uppercase text-muted-foreground">
+                                    Rationale
+                                  </div>
+                                  <p className="mt-2 text-sm">
+                                    {proposal.rationale}
+                                  </p>
+                                </div>
+                                <div className="rounded-lg bg-muted/40 p-3">
+                                  <div className="text-xs font-medium uppercase text-muted-foreground">
+                                    Source
+                                  </div>
+                                  <p className="mt-2 text-sm">
+                                    {formatSourceContext(
+                                      proposal.sourceContext,
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {operations.length > 0 ? (
+                                <div className="mt-4 overflow-x-auto">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Operation</TableHead>
+                                        <TableHead>Target</TableHead>
+                                        <TableHead>Validation</TableHead>
+                                        <TableHead>Execution</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {operations.map((operation) => (
+                                        <TableRow key={operation.id}>
+                                          <TableCell>
+                                            {formatStatusLabel(
+                                              operation.operationType,
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            {formatTargetLabel(
+                                              operation.targetType,
+                                              operation.targetId,
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            {formatStatusLabel(
+                                              operation.validationStatus,
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            {formatStatusLabel(
+                                              operation.executionStatus,
+                                            )}
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              ) : null}
+
+                              <div className="mt-4 border-t pt-4">
+                                {proposal.humanDisposition === "pending" ? (
+                                  <AIProposalReviewForm
+                                    projectId={project.id}
+                                    proposalId={proposal.id}
+                                  />
+                                ) : (
+                                  <div className="text-sm text-muted-foreground">
+                                    Reviewed{" "}
+                                    {formatNullableDateTime(
+                                      proposal.reviewedAt,
+                                    )}
+                                    {proposal.reviewNotes
+                                      ? `: ${proposal.reviewNotes}`
+                                      : ""}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+          </div>
+
+          <aside className="grid h-fit grid-cols-1 gap-4 lg:col-start-2 2xl:col-start-auto 2xl:sticky 2xl:top-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bot className="size-4 text-sky-700" aria-hidden="true" />
+                  AI review
+                </CardTitle>
+                <CardDescription>
+                  Draft summaries and keep human disposition visible.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <AIGenerateStageSummaryForm
+                  defaultStageId={activeStageId}
+                  projectId={project.id}
+                  stageOptions={stageOptions}
+                />
+                <div className="rounded-lg border bg-slate-50 p-3">
+                  <div className="text-xs font-medium uppercase text-slate-500">
+                    Latest proposal
+                  </div>
+                  {latestAiProposal ? (
+                    <div className="mt-2 grid gap-2">
+                      <div className="text-sm font-medium">
+                        {latestAiProposal.title}
+                      </div>
+                      <p className="line-clamp-3 text-sm text-slate-600">
+                        {latestAiProposal.summary}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">
+                          {formatStatusLabel(latestAiProposal.humanDisposition)}
+                        </Badge>
+                        <Badge variant="secondary">
+                          {formatConfidence(latestAiProposal.confidence)}
+                        </Badge>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-500">
+                      No proposal yet.
+                    </p>
+                  )}
                 </div>
-                {readinessWarnings.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                    No readiness warnings.
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle
+                    className="size-4 text-amber-600"
+                    aria-hidden="true"
+                  />
+                  Review signals
+                </CardTitle>
+                <CardDescription>
+                  Non-blocking warnings across allocation, readiness, and
+                  schedule.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                {unresolvedWarningCount === 0 ? (
+                  <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">
+                    No active review signals.
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-3">
-                    {readinessWarnings.map((warning) => (
-                      <div className="rounded-lg border p-3" key={warning.id}>
+                  [
+                    ...planningWarnings,
+                    ...readinessWarnings,
+                    ...scheduleWarnings,
+                  ]
+                    .slice(0, 5)
+                    .map((warning) => (
+                      <div
+                        className="rounded-lg border bg-slate-50 p-3"
+                        key={warning.id}
+                      >
                         <div className="flex items-center justify-between gap-2">
                           <div className="text-sm font-medium">
                             {warning.title}
@@ -947,290 +1770,186 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                             {warning.severity}
                           </Badge>
                         </div>
-                        <p className="mt-2 text-sm text-muted-foreground">
+                        <p className="mt-1 line-clamp-2 text-sm text-slate-600">
                           {warning.detail}
                         </p>
                       </div>
-                    ))}
-                  </div>
+                    ))
                 )}
-              </div>
-            </div>
-
-            <div className="grid gap-6 xl:grid-cols-2">
-              <div className="rounded-lg border p-4">
-                <div className="mb-4 text-sm font-medium">
-                  Add readiness signal
-                </div>
-                <ReadinessSignalForm
-                  projectId={project.id}
-                  targetOptions={readinessTargetOptions}
-                />
-              </div>
-              <div className="rounded-lg border p-4">
-                <div className="mb-4 text-sm font-medium">Add blocker</div>
-                <BlockerForm
-                  projectId={project.id}
-                  readinessSignalOptions={readinessSignalOptions}
-                  targetOptions={readinessTargetOptions}
-                />
-              </div>
-            </div>
-
-            {readinessSignals.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No readiness signals.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Target</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Owner</TableHead>
-                      <TableHead>Summary</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {readinessSignals.map((signal) => (
-                      <TableRow key={signal.id}>
-                        <TableCell>
-                          {targetLabelFor(signal.targetType, signal.targetId, {
-                            matrixEntryLabelById: new Map(
-                              matrixEntries.map((entry) => [
-                                entry.id,
-                                allocationLabelById.get(
-                                  entry.buildQtyAllocationId,
-                                ) ?? entry.id,
-                              ]),
-                            ),
-                            projectName: project.name,
-                            stageNameById,
-                          })}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              signal.status === "blocked"
-                                ? "destructive"
-                                : "secondary"
-                            }
-                          >
-                            {formatReadinessLabel(signal.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{signal.ownerTeam || "-"}</TableCell>
-                        <TableCell>{signal.summary}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            {visibleBlockers.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No active blockers.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Blocker</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Owner</TableHead>
-                      <TableHead>Severity</TableHead>
-                      <TableHead>Due</TableHead>
-                      <TableHead>Impact</TableHead>
-                      <TableHead>Mitigation</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visibleBlockers.map((blocker) => (
-                      <TableRow key={blocker.id}>
-                        <TableCell className="font-medium">
-                          {blocker.title}
-                        </TableCell>
-                        <TableCell>
-                          {formatStatusLabel(blocker.status)}
-                        </TableCell>
-                        <TableCell>{blocker.ownerTeam}</TableCell>
-                        <TableCell>{blocker.severity}</TableCell>
-                        <TableCell>
-                          {formatNullableDateTime(blocker.dueDate)}
-                        </TableCell>
-                        <TableCell>{blocker.impact}</TableCell>
-                        <TableCell>{blocker.mitigation || "-"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            <div className="text-sm text-muted-foreground">
-              {readinessAuditLogs.length} readiness audit{" "}
-              {readinessAuditLogs.length === 1 ? "entry" : "entries"}
-            </div>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="grid gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>AI Planning Copilot</CardTitle>
-            <CardDescription>
-              {aiProposals.length} proposal{aiProposals.length === 1 ? "" : "s"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-            <div className="rounded-lg border p-4">
-              <div className="mb-4 flex flex-col gap-1">
-                <h2 className="text-sm font-medium">Stage summary</h2>
-                <p className="text-sm text-muted-foreground">
-                  Draft a reviewable stage planning proposal from current
-                  demand, allocation, and matrix records.
-                </p>
-              </div>
-              <AIGenerateStageSummaryForm
-                projectId={project.id}
-                stageOptions={stageOptions}
-              />
-            </div>
-
-            {aiProposals.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                No AI proposals.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                {aiProposals
-                  .slice()
-                  .reverse()
-                  .map((proposal) => {
-                    const operations =
-                      operationsByProposalId.get(proposal.id) ?? [];
-
-                    return (
-                      <div className="rounded-lg border p-4" key={proposal.id}>
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h2 className="text-sm font-medium">
-                                {proposal.title}
-                              </h2>
-                              <Badge variant="secondary">
-                                {formatStatusLabel(proposal.proposalType)}
-                              </Badge>
-                            </div>
-                            <p className="mt-2 text-sm text-muted-foreground">
-                              {proposal.summary}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Badge
-                              variant={
-                                proposal.humanDisposition === "rejected"
-                                  ? "destructive"
-                                  : "secondary"
-                              }
-                            >
-                              {formatStatusLabel(proposal.humanDisposition)}
-                            </Badge>
-                            <Badge variant="secondary">
-                              {formatConfidence(proposal.confidence)}
-                            </Badge>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 grid gap-3 md:grid-cols-2">
-                          <div className="rounded-lg bg-muted/40 p-3">
-                            <div className="text-xs font-medium uppercase text-muted-foreground">
-                              Rationale
-                            </div>
-                            <p className="mt-2 text-sm">{proposal.rationale}</p>
-                          </div>
-                          <div className="rounded-lg bg-muted/40 p-3">
-                            <div className="text-xs font-medium uppercase text-muted-foreground">
-                              Source
-                            </div>
-                            <p className="mt-2 text-sm">
-                              {formatSourceContext(proposal.sourceContext)}
-                            </p>
-                          </div>
-                        </div>
-
-                        {operations.length > 0 ? (
-                          <div className="mt-4 overflow-x-auto">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Operation</TableHead>
-                                  <TableHead>Target</TableHead>
-                                  <TableHead>Validation</TableHead>
-                                  <TableHead>Execution</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {operations.map((operation) => (
-                                  <TableRow key={operation.id}>
-                                    <TableCell>
-                                      {formatStatusLabel(
-                                        operation.operationType,
-                                      )}
-                                    </TableCell>
-                                    <TableCell>
-                                      {formatTargetLabel(
-                                        operation.targetType,
-                                        operation.targetId,
-                                      )}
-                                    </TableCell>
-                                    <TableCell>
-                                      {formatStatusLabel(
-                                        operation.validationStatus,
-                                      )}
-                                    </TableCell>
-                                    <TableCell>
-                                      {formatStatusLabel(
-                                        operation.executionStatus,
-                                      )}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        ) : null}
-
-                        <div className="mt-4 border-t pt-4">
-                          {proposal.humanDisposition === "pending" ? (
-                            <AIProposalReviewForm
-                              projectId={project.id}
-                              proposalId={proposal.id}
-                            />
-                          ) : (
-                            <div className="text-sm text-muted-foreground">
-                              Reviewed{" "}
-                              {formatNullableDateTime(proposal.reviewedAt)}
-                              {proposal.reviewNotes
-                                ? `: ${proposal.reviewNotes}`
-                                : ""}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </section>
+              </CardContent>
+            </Card>
+          </aside>
+        </section>
+      </div>
     </main>
   );
+}
+
+type WorkflowStepStatus = "blocked" | "open" | "ready" | "warning";
+
+type WorkflowStep = {
+  count: number | null;
+  description: string;
+  href: string;
+  icon: LucideIcon;
+  id: WorkflowStepId;
+  label: string;
+  status: WorkflowStepStatus;
+};
+
+type MetricTone = "default" | "good" | "warning" | "bad";
+
+function WorkflowStepLink({
+  active,
+  index,
+  step,
+}: {
+  active: boolean;
+  index: number;
+  step: WorkflowStep;
+}) {
+  const Icon = step.icon;
+
+  return (
+    <Link
+      className={[
+        "group grid grid-cols-[28px_minmax(0,1fr)_auto] gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors",
+        active
+          ? "bg-sky-50 text-sky-950 ring-1 ring-sky-200"
+          : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
+      ].join(" ")}
+      href={step.href}
+    >
+      <span
+        className={[
+          "flex size-7 items-center justify-center rounded-lg text-xs font-semibold",
+          active ? "bg-sky-600 text-white" : "bg-slate-100 text-slate-500",
+        ].join(" ")}
+      >
+        {index}
+      </span>
+      <span className="min-w-0">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          <Icon className="size-4" aria-hidden="true" />
+          {step.label}
+        </span>
+        <span className="mt-0.5 block truncate text-xs text-slate-500">
+          {step.description}
+        </span>
+      </span>
+      <span className="flex items-start pt-0.5">
+        <WorkflowStatusDot status={step.status} />
+      </span>
+    </Link>
+  );
+}
+
+function WorkflowStatusDot({ status }: { status: WorkflowStepStatus }) {
+  const className =
+    status === "ready"
+      ? "bg-emerald-500"
+      : status === "warning"
+        ? "bg-amber-500"
+        : status === "blocked"
+          ? "bg-red-500"
+          : "bg-slate-300";
+
+  return (
+    <span
+      aria-hidden="true"
+      className={`mt-1 size-2 rounded-full ${className}`}
+    />
+  );
+}
+
+function MetricTile({
+  label,
+  tone = "default",
+  value,
+}: {
+  label: string;
+  tone?: MetricTone;
+  value: ReactNode;
+}) {
+  return (
+    <div
+      className={[
+        "rounded-xl border px-3 py-2.5",
+        tone === "good"
+          ? "border-emerald-200 bg-emerald-50"
+          : tone === "warning"
+            ? "border-amber-200 bg-amber-50"
+            : tone === "bad"
+              ? "border-red-200 bg-red-50"
+              : "bg-slate-50",
+      ].join(" ")}
+    >
+      <div className="text-xs font-medium uppercase text-slate-500">
+        {label}
+      </div>
+      <div className="mt-1 text-lg font-semibold text-slate-950">{value}</div>
+    </div>
+  );
+}
+
+function ReadinessBadge({ status }: { status: ReadinessStatus }) {
+  if (status === "blocked") {
+    return <Badge variant="destructive">{formatReadinessLabel(status)}</Badge>;
+  }
+
+  if (status === "greenlight") {
+    return (
+      <Badge className="bg-emerald-50 text-emerald-700" variant="outline">
+        {formatReadinessLabel(status)}
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge className="bg-amber-50 text-amber-700" variant="outline">
+      {formatReadinessLabel(status)}
+    </Badge>
+  );
+}
+
+function sectionClass(
+  activeStep: WorkflowStepId,
+  ...stepsAndClassName: string[]
+) {
+  const className = stepsAndClassName.at(-1) ?? "";
+  const steps = stepsAndClassName.slice(0, -1);
+
+  return steps.includes(activeStep) ? className : "hidden";
+}
+
+function projectStepHref(
+  projectId: string,
+  step: WorkflowStepId,
+  stageId?: string,
+) {
+  const params = new URLSearchParams({ step });
+
+  if (stageId) {
+    params.set("stageId", stageId);
+  }
+
+  return `/workspace/projects/${projectId}?${params.toString()}`;
+}
+
+function firstSearchParamValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+}
+
+function readinessTone(status: ReadinessStatus): MetricTone {
+  if (status === "greenlight") {
+    return "good";
+  }
+
+  if (status === "blocked") {
+    return "bad";
+  }
+
+  return "warning";
 }
 
 async function loadProjectPageData(projectId: string) {
