@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vibe-plan-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vibe_plan
+      POSTGRES_USER: vibe_plan
+      POSTGRES_PASSWORD: vibe_plan
+    ports:
+      - "5432:5432"
+    volumes:
+      - vibe_plan_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibe_plan -d vibe_plan"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  vibe_plan_postgres_data:
+

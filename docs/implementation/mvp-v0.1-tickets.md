@@ -1,0 +1,275 @@
+# MVP v0.1 Implementation Tickets
+
+- Date: 2026-06-08
+- Scope: Project Init -> Build Stage -> Functional Team Demand -> Config
+  Profile -> Demand/Profile Mapping -> Build Qty Allocation -> Warning +
+  Change Log
+- Source ADRs: ADR 0001, ADR 0002, ADR 0003
+
+## Milestone 0: App Foundation
+
+### Ticket 0.1: Scaffold the Web App
+
+Goal: Create the first runnable Next.js App Router application.
+
+Scope:
+
+- Initialize Next.js with TypeScript, App Router, ESLint, Tailwind, and pnpm.
+- Keep the repository as a single app at the repository root.
+- Preserve existing `docs/adr` files.
+
+Acceptance:
+
+- `pnpm dev` starts the app locally.
+- `pnpm lint` runs.
+- The root page renders without runtime errors.
+
+### Ticket 0.2: Establish Project Layout
+
+Goal: Add the directory structure defined by ADR 0002.
+
+Scope:
+
+- Add `components/ui`.
+- Add `components/planning`.
+- Add `db/schema`.
+- Add `db/migrations`.
+- Add `lib/auth`, `lib/domain`, `lib/ai`, `lib/env`, and `lib/validation`.
+
+Acceptance:
+
+- Directories exist with lightweight placeholder modules or `.gitkeep` files.
+- No business logic is placed directly in page components.
+
+### Ticket 0.3: Configure Environment Validation
+
+Goal: Provide a safe baseline for required runtime configuration.
+
+Scope:
+
+- Define server-side environment loading for Clerk, Neon, and OpenAI keys.
+- Keep public env vars explicit.
+- Document local `.env.local` expectations.
+
+Acceptance:
+
+- Missing required env values fail with a clear server-side error.
+- No secret values are exposed to client components.
+
+## Milestone 1: Auth and Database
+
+### Ticket 1.1: Integrate Clerk Auth
+
+Goal: Protect the application shell and expose user/org identity to server-side
+domain services.
+
+Scope:
+
+- Add Clerk provider and middleware.
+- Create protected app routes under an authenticated route group.
+- Add server-side auth helper in `lib/auth`.
+
+Acceptance:
+
+- Unauthenticated users cannot access app workspace routes.
+- Server-side actions can read current user and organization context.
+
+### Ticket 1.2: Integrate Neon Postgres and Drizzle
+
+Goal: Establish typed database access and migrations.
+
+Scope:
+
+- Add Drizzle ORM and Drizzle Kit.
+- Configure Neon Postgres connection.
+- Add `db/client.ts`.
+- Add initial schema modules.
+
+Acceptance:
+
+- Drizzle config can generate migrations.
+- Server-only modules can import the DB client.
+- DB client is not importable from client components.
+
+## Milestone 2: Core Planning Schema
+
+### Ticket 2.1: Implement Projects and Build Stages Schema
+
+Goal: Create the first relational tables for Project Init and Build Stage.
+
+Scope:
+
+- Add `projects`.
+- Add `build_stages`.
+- Include lifecycle fields, soft delete/archive fields, and project/stage
+  ownership fields.
+
+Acceptance:
+
+- Migration creates project and build stage tables.
+- Build stages are ordered within a project.
+- Project can be created with name and description.
+
+### Ticket 2.2: Implement Demand/Profile/Allocation Schema
+
+Goal: Model the core allocation workflow.
+
+Scope:
+
+- Add `functional_team_demands`.
+- Add `config_profiles`.
+- Add `demand_profile_mappings`.
+- Add `build_qty_allocations`.
+- Add `allocation_change_logs`.
+
+Acceptance:
+
+- Demand can map to multiple profiles.
+- Profile can aggregate multiple demands.
+- Active config profile structural key is unique within one build stage.
+- At most one active allocation exists per config profile.
+- Allocation change logs support before/after JSON values.
+
+## Milestone 3: Domain Services
+
+### Ticket 3.1: Project and Stage Services
+
+Goal: Implement server-only domain services for project and stage lifecycle.
+
+Scope:
+
+- Create project.
+- List projects.
+- Create build stage from explicit fields.
+- Edit build stage name, goal, description, order, and status.
+
+Acceptance:
+
+- Services enforce auth context and project scope.
+- Page/server actions call services rather than DB queries directly.
+
+### Ticket 3.2: Demand and Profile Services
+
+Goal: Implement demand intake and structured profile creation.
+
+Scope:
+
+- Create functional team demand.
+- Create config profile.
+- Map demand to profile with contribution qty, weight, and rationale.
+- Detect demand mapping mismatch warnings.
+
+Acceptance:
+
+- One demand can split across multiple profiles.
+- One profile can aggregate multiple demands.
+- Negative quantities are rejected.
+- Mismatch warnings are returned but do not block save.
+
+### Ticket 3.3: Allocation Services and Change Logs
+
+Goal: Implement live-edit allocation with audit.
+
+Scope:
+
+- Create allocation for config profile.
+- Edit allocated qty, rationale, status, and profile linkage where allowed.
+- Record field-level allocation change logs.
+- Detect allocation/profile mismatch warnings.
+
+Acceptance:
+
+- Allocation can be edited without a baseline workflow.
+- Every key allocation edit writes a change log.
+- Warning data is available to UI without blocking save.
+
+## Milestone 4: MVP Planning Workspace
+
+### Ticket 4.1: App Shell and Navigation
+
+Goal: Create a usable authenticated workspace shell.
+
+Scope:
+
+- Project list.
+- Project detail route.
+- Build stage navigation.
+- Empty states for first-run use.
+
+Acceptance:
+
+- User can create a project and navigate to its stages.
+- Empty state offers the next primary action.
+
+### Ticket 4.2: Stage Planning Workspace
+
+Goal: Create the first working planning surface for one build stage.
+
+Scope:
+
+- Demand table.
+- Config profile table.
+- Demand/profile mapping editor.
+- Allocation table.
+- Warning panel.
+- Change log view.
+
+Acceptance:
+
+- User can complete the v0.1 workflow from demand to allocation.
+- Warnings are visible and non-blocking.
+- Allocation change logs are visible.
+
+### Ticket 4.3: Form Validation and UX States
+
+Goal: Make the first workflow reliable enough for dogfooding.
+
+Scope:
+
+- Add validation messages for required fields and non-negative quantities.
+- Add loading, success, and error states for server actions.
+- Preserve form state on validation failure where practical.
+
+Acceptance:
+
+- Invalid submissions produce clear messages.
+- Successful actions update the workspace without full manual refresh.
+
+## Milestone 5: Verification
+
+### Ticket 5.1: Unit Tests for Domain Rules
+
+Goal: Test the rules most likely to regress.
+
+Scope:
+
+- Structural key uniqueness.
+- Demand/profile mapping mismatch.
+- Allocation/profile mismatch.
+- Change log creation.
+- Soft-delete exclusion from active queries.
+
+Acceptance:
+
+- Tests can run locally.
+- Rules are tested without rendering UI.
+
+### Ticket 5.2: MVP Walkthrough Test
+
+Goal: Verify the first end-to-end workflow.
+
+Scope:
+
+- Create project.
+- Create stage.
+- Add team demand.
+- Create config profile.
+- Map demand to profile.
+- Create/edit allocation.
+- Confirm warning and change log display.
+
+Acceptance:
+
+- The workflow works in a local browser.
+- Any required env or DB setup is documented.
+
