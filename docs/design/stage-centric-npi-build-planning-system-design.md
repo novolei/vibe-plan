@@ -77,7 +77,7 @@ change logs.
 
 ### Build Matrix Layer
 
-Next schema slice:
+Implemented schema slice:
 
 - `build_matrix_entries`
 
@@ -98,12 +98,11 @@ Initial fields:
 - lifecycle timestamps and soft delete fields
 
 Future ADR 0005 depth can add process route templates, route instance steps,
-BOM snapshots, BOM components, and matrix rows when process/material detail
-requires it.
+BOM snapshots, and BOM components when process/material detail requires it.
 
 ### AI Proposal Layer
 
-Next schema slice:
+Implemented schema slice:
 
 - `ai_agents`
 - `ai_runs`
@@ -112,13 +111,13 @@ Next schema slice:
 - `ai_audit_events`
 
 AI operations are domain operations, not raw database patches. The first
-operation set should cover summary/report, conflict check, create/update config
-profile proposal, create/update allocation proposal, and create/update matrix
-entry proposal.
+operation set persists a stage summary/report proposal with structured
+operation payloads and human disposition. Conflict check and create/update
+operation application remain deferred.
 
 ### Schedule Layer
 
-Future schema slice:
+Implemented schema slice:
 
 - `schedule_tasks`
 - `schedule_task_links`
@@ -127,12 +126,12 @@ Future schema slice:
 - `schedule_audit_logs`
 
 Every schedule task must link to at least one NPI planning object. Dates are
-manually maintained; the system warns about dependency conflicts and delay risk
-instead of auto-rescheduling.
+manually maintained; the system warns about dependency conflicts instead of
+auto-rescheduling.
 
 ### Readiness Layer
 
-Future schema slice:
+Implemented schema slice:
 
 - `readiness_signals`
 - `readiness_rollups`
@@ -141,7 +140,7 @@ Future schema slice:
 - `readiness_audit_logs`
 
 Readiness is separate from task execution status. Rollups follow worst-child
-semantics with manual override reason required.
+semantics; richer mandatory override governance remains deferred.
 
 ## Domain Rules
 
@@ -157,9 +156,6 @@ Current rules:
 - Demand/profile mismatch creates a warning, not a blocking error.
 - Allocation/profile mismatch creates a warning, not a blocking error.
 - Allocation create/update writes change logs for changed fields.
-
-Planned rules:
-
 - Matrix entries must reference active project, stage, profile, and allocation
   records.
 - Matrix readiness values are limited to Greenlight, At Risk, and Blocked.
@@ -168,17 +164,33 @@ Planned rules:
 - Readiness signals must attach to valid active planning objects.
 - Blocked readiness should have at least one open blocker unless manually
   overridden with a reason.
+- Stage readiness summary follows worst-child semantics across matrix entries
+  and readiness signals.
+- Finish-to-start dependency conflicts create warnings without
+  auto-rescheduling.
+
+Planned rules:
+
+- Baseline confirmation must freeze reviewed planning records and expose an
+  explicit revision path.
+- Matrix conflict checks should compare process/material compatibility across
+  proposed and existing rows.
+- AI operation application must validate operation payloads before mutating
+  domain records.
+- Readiness checklist and signoff governance must define mandatory gates,
+  override reasons, and approver roles.
+- Project/stage roles must expand beyond owner-based access.
 
 ## AI Integration
 
-The app already has a provider-agnostic AI boundary in `lib/ai`. The next design
-step is to add planning-level orchestration:
+The app has a provider-agnostic AI boundary in `lib/ai` and planning-level
+proposal orchestration:
 
 - `PlanningCopilot`: prepares bounded context and asks the provider for a
   domain proposal.
 - `AIAgentProposalStore`: persists runs, proposals, operations, and audit events.
-- `AIOperationValidator`: validates proposed operations against domain schemas
-  before persistence or application.
+- Future `AIOperationValidator`: validates proposed operations against domain
+  schemas before application.
 
 DeepSeek can be used through the OpenAI-compatible adapter during development.
 Product code should not call DeepSeek or OpenAI directly.
@@ -192,7 +204,9 @@ The workspace should stay dense and work-focused:
 - Demand, profile, mapping, allocation, and matrix sections.
 - Warning and audit side panels.
 - AI proposal review panel.
-- Schedule/readiness tabs once those extensions exist.
+- Readiness and blocker panels.
+- Schedule task and dependency panels.
+- Future tabbed Gantt/readiness views once workflow density requires them.
 
 Client components should own pending/success/error states and local form
 ergonomics. Server actions should own validation, mutation, expected error
@@ -200,21 +214,24 @@ mapping, and route revalidation.
 
 ## Verification Strategy
 
-- Unit/domain tests: planning warnings, allocation change log rows, schedule
-  dependency warnings, readiness rollups.
+- Unit/domain tests: planning warnings, allocation change log rows, build matrix
+  allocation rules, AI proposal review rules, schedule dependency warnings, and
+  readiness rollups.
 - DB tests: partial unique indexes, soft-delete exclusion, foreign key scope,
   non-negative qty checks.
-- Browser walkthrough: project, stage, demand, profile, mapping, allocation,
-  warning, change log, then matrix/readiness as those slices land.
+- Walkthrough fixture: Project -> Stage -> Demand -> Profile -> Mapping ->
+  Allocation records for browser-workflow reuse.
 - Build gates: `pnpm test`, `pnpm exec tsc --noEmit`, `pnpm lint`, and
   `pnpm build`.
 
 ## Implementation Sequence
 
-1. Land Ticket 5.1 domain rule tests.
-2. Add Ticket 5.2 browser walkthrough verification.
-3. Add build matrix MVP schema, services, UI, warnings, and tests.
-4. Add AI proposal/audit MVP with human disposition.
-5. Add readiness/blocker MVP for matrix and stage rollup.
-6. Add schedule task/link/dependency MVP and later Gantt visualization.
-7. Add baseline confirmation and richer project/stage roles.
+1. Land Ticket 5.1 domain rule tests. Implemented.
+2. Add Ticket 5.2 browser walkthrough verification. Implemented with a
+   DB-backed fixture.
+3. Add build matrix MVP schema, services, UI, warnings, and tests. Implemented.
+4. Add AI proposal/audit MVP with human disposition. Implemented.
+5. Add readiness/blocker MVP for matrix and stage rollup. Implemented.
+6. Add schedule task/link/dependency MVP. Implemented.
+7. Add visual Gantt, baseline confirmation, AI operation application,
+   readiness signoff governance, and richer project/stage roles. Deferred.

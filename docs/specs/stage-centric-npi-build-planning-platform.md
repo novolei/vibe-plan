@@ -2,7 +2,8 @@
 
 - Date: 2026-06-08
 - Source ADRs: ADR 0001 through ADR 0007
-- Current implementation baseline: `main` at `e61e511`
+- Current implementation baseline: branch `codex/adr-spec-design-plan` through
+  the ADR-backed MVP vertical slices.
 
 ## Purpose
 
@@ -60,7 +61,8 @@ planning review, and later schedule/readiness follow-up.
 
 ## MVP v0.1 Scope
 
-MVP v0.1 proves the first planning loop:
+MVP v0.1 proves the first planning loop plus the ADR-backed extension
+foundations:
 
 - Project creation.
 - Build stage creation.
@@ -72,6 +74,10 @@ MVP v0.1 proves the first planning loop:
   mismatches.
 - Allocation change log display.
 - Form validation and expected error UX.
+- Build matrix process/material mapping.
+- AI proposal generation and human review disposition.
+- Readiness signals, blockers, and stage rollup summaries.
+- Schedule tasks, planning-object links, and dependency warnings.
 - Domain rule tests and browser walkthrough verification.
 
 ## ADR-Backed Expansion Scope
@@ -102,9 +108,10 @@ AI agent MVP adds durable proposal records:
 - `ai_operations`
 - `ai_audit_events`
 
-The first UI should support a planning summary proposal and a matrix conflict
-check proposal. AI output must remain draft/proposal data until a human reviews
-it. Baseline-impacting changes cannot be silently applied by AI.
+The first UI supports a planning summary proposal and human disposition. Matrix
+conflict checks and explicit operation application remain deferred. AI output
+must remain draft/proposal data until a human reviews it. Baseline-impacting
+changes cannot be silently applied by AI.
 
 ### Schedule and Gantt Extension
 
@@ -116,9 +123,9 @@ Schedule MVP adds task records tied to NPI objects:
 - `schedule_worklogs`
 - `schedule_audit_logs`
 
-The first user-facing slice should be a schedule task list tied to build stages
-and matrix rows. Gantt visualization can start as structured data and dependency
-warnings before a full visual chart.
+The first user-facing slice is a schedule task list tied to project, stage,
+profile, allocation, matrix, readiness, or blocker objects. Gantt visualization
+starts as structured data and dependency warnings before a full visual chart.
 
 ### Readiness and Blockers
 
@@ -130,13 +137,13 @@ Readiness MVP adds:
 - `readiness_signoffs`
 - `readiness_audit_logs`
 
-The first user-facing slice should show Greenlight, At Risk, and Blocked state
-on build matrix entries and stage rollups. Blockers must capture owner, impact,
-due date or decision needed, and mitigation.
+The first user-facing slice shows Greenlight, At Risk, and Blocked state on
+readiness signals, build matrix entries, and stage rollups. Blockers capture
+owner, impact, due date or decision needed, and mitigation.
 
 ## Current Implementation Status
 
-Implemented on `main`:
+Implemented on branch `codex/adr-spec-design-plan`:
 
 - Next.js App Router application scaffold.
 - Clerk auth integration and protected workspace.
@@ -147,22 +154,26 @@ Implemented on `main`:
 - Planning warnings for demand/profile and allocation/profile mismatch.
 - Form validation, loading states, success states, and expected error handling.
 - AI provider boundary with OpenAI-compatible and DeepSeek-ready configuration.
-
-Implemented on branch `codex/ticket-5-1-domain-tests`:
-
 - Node test runner setup.
 - Domain rule tests for planning warnings and allocation change log rows.
 - DB-backed tests for structural key uniqueness and soft-delete exclusion.
+- DB-backed walkthrough fixture for Project -> Stage -> Demand -> Profile ->
+  Mapping -> Allocation.
+- Build matrix schema, migration, domain service, workspace UI, and tests.
+- AI proposal/audit schema, migration, planning copilot service, review UI, and
+  tests.
+- Readiness signal, blocker, rollup, audit schema, workspace UI, and tests.
+- Schedule task, link, dependency, audit schema, workspace UI, and tests.
 
-Not implemented yet:
+Deferred beyond MVP v0.1:
 
-- Build matrix schema and UI.
-- Durable AI proposal/audit schema and review UI.
-- Schedule/Gantt schema and UI.
-- Readiness/blocker schema and UI.
-- MVP browser walkthrough automation.
 - Baseline confirmation workflow.
 - Project/stage role model beyond current owner-based access.
+- AI operation application workflow for baseline-impacting mutations.
+- Matrix conflict-check proposal generation beyond the stage summary proposal.
+- Full visual Gantt chart, critical path UI, and auto-rescheduling.
+- Readiness checklist templates and mandatory gate signoff governance.
+- Full PLM, ERP, MES, BOM, procurement, and inventory integrations.
 
 ## Acceptance Scenarios
 

@@ -2,9 +2,10 @@
 
 - Date: 2026-06-08
 - Scope: Project Init -> Build Stage -> Functional Team Demand -> Config
-  Profile -> Demand/Profile Mapping -> Build Qty Allocation -> Warning +
+  Profile -> Demand/Profile Mapping -> Build Qty Allocation -> Build Matrix ->
+  AI Proposal/Audit -> Readiness/Blocker -> Schedule Extension -> Warning +
   Change Log
-- Source ADRs: ADR 0001, ADR 0002, ADR 0003
+- Source ADRs: ADR 0001 through ADR 0007
 
 ## Milestone 0: App Foundation
 
@@ -302,3 +303,122 @@ Acceptance:
 - Matrix entries require active allocations.
 - Greenlight, At Risk, and Blocked readiness states can be stored.
 - Duplicate active matrix entries for the same allocation are rejected.
+
+Implementation note: Completed in `db/schema/index.ts`,
+`db/migrations/0003_reflective_molly_hayes.sql`,
+`lib/domain/projects.ts`, `lib/domain/build-matrix-rules.ts`,
+`app/workspace/actions.ts`, `components/planning/action-forms.tsx`,
+`app/workspace/projects/[projectId]/page.tsx`, and
+`tests/domain/build-matrix-rules.test.ts`.
+
+## Milestone 7: AI Proposal and Audit MVP
+
+### Ticket 7.1: Planning Copilot Proposal Records
+
+Goal: Persist AI-generated planning proposals without allowing AI to approve or
+silently mutate baseline-impacting records.
+
+Scope:
+
+- Add `ai_agents`, `ai_runs`, `ai_proposals`, `ai_operations`, and
+  `ai_audit_events`.
+- Add a Planning Copilot service that can create a stage summary proposal from
+  current project planning records.
+- Add project workspace UI for AI proposal generation and human disposition.
+- Preserve source context, rationale, confidence, operation payload, and review
+  audit data.
+
+Acceptance:
+
+- AI proposals are created as pending review records.
+- Human users can accept, reject, or revise proposals.
+- Accepted means reviewed, not automatically applied.
+- Proposal operations remain pending unless a future explicit apply path is
+  implemented.
+
+Implementation note: Completed in `db/schema/index.ts`,
+`db/migrations/0004_glorious_tomorrow_man.sql`,
+`lib/domain/ai-proposals.ts`, `lib/domain/planning-copilot.ts`,
+`app/workspace/actions.ts`, `components/planning/action-forms.tsx`,
+`app/workspace/projects/[projectId]/page.tsx`, and
+`tests/domain/ai-proposals.test.ts`.
+
+## Milestone 8: Readiness and Blocker MVP
+
+### Ticket 8.1: Readiness Signals, Rollups, and Blockers
+
+Goal: Add the ADR 0007 readiness model so project, stage, matrix, and later
+schedule objects can express Greenlight, At Risk, and Blocked state with
+actionable blocker follow-up.
+
+Scope:
+
+- Add `readiness_signals`, `readiness_rollups`, `blockers`,
+  `readiness_signoffs`, and `readiness_audit_logs`.
+- Add worst-child readiness rollup rules.
+- Add blocked-signal-without-active-blocker warning.
+- Add project workspace UI for readiness signals and blockers.
+- Keep readiness state independent from schedule task execution status.
+
+Acceptance:
+
+- Readiness can be attached to project, build stage, or matrix entry objects.
+- Stage summary rolls up matrix readiness and readiness signal state.
+- Blockers capture owner team, severity, impact, due date, decision-needed
+  state, and mitigation.
+- Accepted risk blockers remain visible and auditable.
+
+Implementation note: Completed in `db/schema/index.ts`,
+`db/migrations/0005_plain_dorian_gray.sql`, `lib/domain/readiness.ts`,
+`lib/domain/readiness-rules.ts`, `app/workspace/actions.ts`,
+`components/planning/action-forms.tsx`,
+`app/workspace/projects/[projectId]/page.tsx`, and
+`tests/domain/readiness.test.ts`.
+
+## Milestone 9: Schedule Extension MVP
+
+### Ticket 9.1: Schedule Tasks, Links, Dependencies, and Warnings
+
+Goal: Add the ADR 0006 schedule extension foundation before full Gantt
+visualization.
+
+Scope:
+
+- Add `schedule_tasks`, `schedule_task_links`, `schedule_dependencies`,
+  `schedule_worklogs`, and `schedule_audit_logs`.
+- Require every schedule task to have at least one active planning-object link.
+- Add finish-to-start dependency conflict detection.
+- Add project workspace UI for schedule task and dependency creation.
+- Keep schedule task status independent from readiness state.
+
+Acceptance:
+
+- A schedule task can be tied to a project, stage, profile, allocation, matrix
+  row, readiness signal, or blocker.
+- Dependency warnings are visible without auto-rescheduling.
+- A blocked task does not automatically mutate linked readiness status.
+
+Implementation note: Completed in `db/schema/index.ts`,
+`db/migrations/0006_nostalgic_the_renegades.sql`,
+`lib/domain/schedule.ts`, `lib/domain/schedule-rules.ts`,
+`app/workspace/actions.ts`, `components/planning/action-forms.tsx`,
+`app/workspace/projects/[projectId]/page.tsx`, and
+`tests/domain/schedule.test.ts`.
+
+## Milestone 10: Final Verification
+
+Final verification on branch `codex/adr-spec-design-plan`:
+
+- `pnpm test`: 20 tests passed.
+- `pnpm test:e2e`: 1 test passed.
+- `pnpm exec tsc --noEmit`: passed.
+- `pnpm lint`: passed.
+- `pnpm build`: passed.
+
+Deferred beyond MVP v0.1:
+
+- Formal baseline confirmation workflow.
+- Full visual Gantt chart and critical path UI.
+- Readiness checklist templates and mandatory gate signoff governance.
+- Project/stage role model beyond current owner-based access.
+- Explicit AI operation apply workflow for baseline-impacting mutations.
