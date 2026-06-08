@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, eq, isNull } from "drizzle-orm";
 
 import {
+  allocationChangeLogs,
   buildQtyAllocations,
   buildStages,
   configProfiles,
@@ -61,6 +62,13 @@ type CreateBuildQtyAllocationInput = {
   configProfileId: string;
   allocatedQty: number;
   rationale?: string;
+};
+
+type PlanningWarning = {
+  detail: string;
+  id: string;
+  severity: "info" | "warning";
+  title: string;
 };
 
 export async function listProjectsForCurrentUser() {
@@ -144,49 +152,62 @@ export async function createBuildStage(input: CreateBuildStageInput) {
 export async function listPlanningRecordsForProject(projectId: string) {
   await getProjectForCurrentUser(projectId);
 
-  const [demands, profiles, mappings, allocations] = await Promise.all([
-    db.query.functionalTeamDemands.findMany({
-      where: and(
-        eq(functionalTeamDemands.projectId, projectId),
-        isNull(functionalTeamDemands.deletedAt),
-      ),
-      orderBy: [
-        asc(functionalTeamDemands.createdAt),
-        asc(functionalTeamDemands.team),
-      ],
-    }),
-    db.query.configProfiles.findMany({
-      where: and(
-        eq(configProfiles.projectId, projectId),
-        isNull(configProfiles.deletedAt),
-      ),
-      orderBy: [asc(configProfiles.createdAt)],
-    }),
-    db.query.demandProfileMappings.findMany({
-      where: isNull(demandProfileMappings.deletedAt),
-      orderBy: [asc(demandProfileMappings.createdAt)],
-    }),
-    db.query.buildQtyAllocations.findMany({
-      where: and(
-        eq(buildQtyAllocations.projectId, projectId),
-        isNull(buildQtyAllocations.deletedAt),
-      ),
-      orderBy: [asc(buildQtyAllocations.createdAt)],
-    }),
-  ]);
+  const [demands, profiles, mappings, allocations, allocationLogs] =
+    await Promise.all([
+      db.query.functionalTeamDemands.findMany({
+        where: and(
+          eq(functionalTeamDemands.projectId, projectId),
+          isNull(functionalTeamDemands.deletedAt),
+        ),
+        orderBy: [
+          asc(functionalTeamDemands.createdAt),
+          asc(functionalTeamDemands.team),
+        ],
+      }),
+      db.query.configProfiles.findMany({
+        where: and(
+          eq(configProfiles.projectId, projectId),
+          isNull(configProfiles.deletedAt),
+        ),
+        orderBy: [asc(configProfiles.createdAt)],
+      }),
+      db.query.demandProfileMappings.findMany({
+        where: isNull(demandProfileMappings.deletedAt),
+        orderBy: [asc(demandProfileMappings.createdAt)],
+      }),
+      db.query.buildQtyAllocations.findMany({
+        where: and(
+          eq(buildQtyAllocations.projectId, projectId),
+          isNull(buildQtyAllocations.deletedAt),
+        ),
+        orderBy: [asc(buildQtyAllocations.createdAt)],
+      }),
+      db.query.allocationChangeLogs.findMany({
+        where: eq(allocationChangeLogs.projectId, projectId),
+        orderBy: [asc(allocationChangeLogs.createdAt)],
+      }),
+    ]);
 
   const projectDemandIds = new Set(demands.map((demand) => demand.id));
   const projectProfileIds = new Set(profiles.map((profile) => profile.id));
+  const projectMappings = mappings.filter(
+    (mapping) =>
+      projectDemandIds.has(mapping.functionalTeamDemandId) &&
+      projectProfileIds.has(mapping.configProfileId),
+  );
 
   return {
     demands,
     profiles,
-    mappings: mappings.filter(
-      (mapping) =>
-        projectDemandIds.has(mapping.functionalTeamDemandId) &&
-        projectProfileIds.has(mapping.configProfileId),
-    ),
+    mappings: projectMappings,
     allocations,
+    allocationLogs,
+    planningWarnings: buildPlanningWarnings({
+      allocations,
+      demands,
+      mappings: projectMappings,
+      profiles,
+    }),
   };
 }
 
@@ -265,6 +286,7 @@ export async function createDemandProfileMapping(
 export async function upsertBuildQtyAllocation(
   input: CreateBuildQtyAllocationInput,
 ) {
+  const authContext = await requireUser();
   const profile = await getConfigProfileForCurrentUser(
     input.projectId,
     input.configProfileId,
@@ -279,32 +301,185 @@ export async function upsertBuildQtyAllocation(
   });
 
   if (existingAllocation) {
-    const [allocation] = await db
-      .update(buildQtyAllocations)
-      .set({
-        allocatedQty: input.allocatedQty,
-        rationale: input.rationale || "",
-        updatedAt: new Date(),
-      })
-      .where(eq(buildQtyAllocations.id, existingAllocation.id))
-      .returning();
+    return db.transaction(async (tx) => {
+      const [allocation] = await tx
+        .update(buildQtyAllocations)
+        .set({
+          allocatedQty: input.allocatedQty,
+          rationale: input.rationale || "",
+          updatedAt: new Date(),
+        })
+        .where(eq(buildQtyAllocations.id, existingAllocation.id))
+        .returning();
 
-    return allocation;
+      await writeAllocationChangeLogs(tx, {
+        actorUserId: authContext.userId,
+        allocationId: existingAllocation.id,
+        changes: [
+          {
+            afterValue: allocation.allocatedQty,
+            beforeValue: existingAllocation.allocatedQty,
+            fieldName: "allocated_qty",
+          },
+          {
+            afterValue: allocation.rationale,
+            beforeValue: existingAllocation.rationale,
+            fieldName: "rationale",
+          },
+        ],
+        configProfileId: allocation.configProfileId,
+        projectId: allocation.projectId,
+        reason: input.rationale || "Allocation updated",
+        stageId: allocation.buildStageId,
+      });
+
+      return allocation;
+    });
   }
 
-  const [allocation] = await db
-    .insert(buildQtyAllocations)
-    .values({
-      projectId: input.projectId,
-      buildStageId: profile.buildStageId,
-      configProfileId: input.configProfileId,
-      allocatedQty: input.allocatedQty,
-      rationale: input.rationale || "",
-      status: "active",
-    })
-    .returning();
+  return db.transaction(async (tx) => {
+    const [allocation] = await tx
+      .insert(buildQtyAllocations)
+      .values({
+        projectId: input.projectId,
+        buildStageId: profile.buildStageId,
+        configProfileId: input.configProfileId,
+        allocatedQty: input.allocatedQty,
+        rationale: input.rationale || "",
+        status: "active",
+      })
+      .returning();
 
-  return allocation;
+    await writeAllocationChangeLogs(tx, {
+      actorUserId: authContext.userId,
+      allocationId: allocation.id,
+      changes: [
+        {
+          afterValue: allocation.allocatedQty,
+          beforeValue: null,
+          fieldName: "allocated_qty",
+        },
+        {
+          afterValue: allocation.rationale,
+          beforeValue: null,
+          fieldName: "rationale",
+        },
+        {
+          afterValue: allocation.status,
+          beforeValue: null,
+          fieldName: "status",
+        },
+      ],
+      configProfileId: allocation.configProfileId,
+      projectId: allocation.projectId,
+      reason: input.rationale || "Allocation created",
+      stageId: allocation.buildStageId,
+    });
+
+    return allocation;
+  });
+}
+
+function buildPlanningWarnings(input: {
+  allocations: (typeof buildQtyAllocations.$inferSelect)[];
+  demands: (typeof functionalTeamDemands.$inferSelect)[];
+  mappings: (typeof demandProfileMappings.$inferSelect)[];
+  profiles: (typeof configProfiles.$inferSelect)[];
+}): PlanningWarning[] {
+  const warnings: PlanningWarning[] = [];
+  const activeAllocationByProfileId = new Map(
+    input.allocations
+      .filter((allocation) => allocation.status === "active")
+      .map((allocation) => [allocation.configProfileId, allocation]),
+  );
+
+  for (const demand of input.demands) {
+    const mappedQty = input.mappings
+      .filter((mapping) => mapping.functionalTeamDemandId === demand.id)
+      .reduce((sum, mapping) => sum + mapping.contributionQty, 0);
+
+    if (mappedQty !== demand.requestedQty) {
+      warnings.push({
+        detail: `${demand.team} requested ${demand.requestedQty}, mapped ${mappedQty}.`,
+        id: `demand-${demand.id}-mapped-qty`,
+        severity: "warning",
+        title:
+          mappedQty > demand.requestedQty
+            ? "Demand is over-mapped"
+            : "Demand is under-mapped",
+      });
+    }
+  }
+
+  for (const profile of input.profiles) {
+    const mappedQty = input.mappings
+      .filter((mapping) => mapping.configProfileId === profile.id)
+      .reduce((sum, mapping) => sum + mapping.contributionQty, 0);
+    const allocatedQty =
+      activeAllocationByProfileId.get(profile.id)?.allocatedQty ?? 0;
+
+    if (mappedQty !== allocatedQty) {
+      warnings.push({
+        detail: `${profile.productRevision} / ${profile.testPurpose} mapped ${mappedQty}, allocated ${allocatedQty}.`,
+        id: `profile-${profile.id}-allocated-qty`,
+        severity: "warning",
+        title:
+          allocatedQty > mappedQty
+            ? "Allocation exceeds mapped demand"
+            : "Allocation is below mapped demand",
+      });
+    }
+  }
+
+  if (warnings.length === 0 && input.profiles.length > 0) {
+    warnings.push({
+      detail: "Mapped demand and active allocations are currently aligned.",
+      id: "planning-aligned",
+      severity: "info",
+      title: "Planning quantities aligned",
+    });
+  }
+
+  return warnings;
+}
+
+async function writeAllocationChangeLogs(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  input: {
+    actorUserId: string;
+    allocationId: string;
+    changes: Array<{
+      afterValue: unknown;
+      beforeValue: unknown;
+      fieldName: string;
+    }>;
+    configProfileId: string;
+    projectId: string;
+    reason: string;
+    stageId: string;
+  },
+) {
+  const changes = input.changes.filter(
+    (change) => change.beforeValue !== change.afterValue,
+  );
+
+  if (changes.length === 0) {
+    return;
+  }
+
+  await tx.insert(allocationChangeLogs).values(
+    changes.map((change) => ({
+      actorUserId: input.actorUserId,
+      afterValue: change.afterValue,
+      beforeValue: change.beforeValue,
+      buildQtyAllocationId: input.allocationId,
+      buildStageId: input.stageId,
+      configProfileId: input.configProfileId,
+      fieldName: change.fieldName,
+      projectId: input.projectId,
+      reason: input.reason,
+    })),
+  );
 }
 
 async function getBuildStageForCurrentUser(projectId: string, stageId: string) {

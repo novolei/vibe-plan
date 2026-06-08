@@ -50,8 +50,16 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     notFound();
   }
 
-  const { allocations, demands, mappings, profiles, project, stages } =
-    projectPageData;
+  const {
+    allocationLogs,
+    allocations,
+    demands,
+    mappings,
+    planningWarnings,
+    profiles,
+    project,
+    stages,
+  } = projectPageData;
   const stageNameById = new Map(stages.map((stage) => [stage.id, stage.name]));
   const demandLabelById = new Map(
     demands.map((demand) => [
@@ -156,6 +164,103 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
               />
               <Button type="submit">Create stage</Button>
             </form>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Planning warnings</CardTitle>
+            <CardDescription>
+              {planningWarnings.length} signal
+              {planningWarnings.length === 1 ? "" : "s"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {planningWarnings.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No warnings yet. Add demand, mappings, and allocation to start
+                validation.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {planningWarnings.map((warning) => (
+                  <div
+                    className="rounded-lg border p-4 text-sm"
+                    key={warning.id}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-medium">{warning.title}</div>
+                      <Badge
+                        variant={
+                          warning.severity === "warning"
+                            ? "destructive"
+                            : "secondary"
+                        }
+                      >
+                        {warning.severity}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 text-muted-foreground">
+                      {warning.detail}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Allocation change log</CardTitle>
+            <CardDescription>
+              {allocationLogs.length} audit{" "}
+              {allocationLogs.length === 1 ? "entry" : "entries"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {allocationLogs.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No allocation edits have been recorded.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>When</TableHead>
+                      <TableHead>Profile</TableHead>
+                      <TableHead>Field</TableHead>
+                      <TableHead>Before</TableHead>
+                      <TableHead>After</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allocationLogs
+                      .slice()
+                      .reverse()
+                      .slice(0, 8)
+                      .map((log) => (
+                        <TableRow key={log.id}>
+                          <TableCell>{formatDateTime(log.createdAt)}</TableCell>
+                          <TableCell>
+                            {profileLabelById.get(log.configProfileId)}
+                          </TableCell>
+                          <TableCell>{log.fieldName}</TableCell>
+                          <TableCell>
+                            {formatLogValue(log.beforeValue)}
+                          </TableCell>
+                          <TableCell>
+                            {formatLogValue(log.afterValue)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>
@@ -547,4 +652,25 @@ function formatProfileLabel(profile: {
     profile.marketOrRegion,
     profile.variant,
   ].join(" / ");
+}
+
+function formatDateTime(value: Date) {
+  return new Intl.DateTimeFormat("en", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+  }).format(value);
+}
+
+function formatLogValue(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
+  }
+
+  return JSON.stringify(value);
 }

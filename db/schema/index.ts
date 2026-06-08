@@ -100,6 +100,7 @@ export const projectsRelations = relations(projects, ({ many }) => ({
   demands: many(functionalTeamDemands),
   configProfiles: many(configProfiles),
   buildQtyAllocations: many(buildQtyAllocations),
+  allocationChangeLogs: many(allocationChangeLogs),
 }));
 
 export const buildStagesRelations = relations(buildStages, ({ many, one }) => ({
@@ -110,6 +111,7 @@ export const buildStagesRelations = relations(buildStages, ({ many, one }) => ({
   demands: many(functionalTeamDemands),
   configProfiles: many(configProfiles),
   buildQtyAllocations: many(buildQtyAllocations),
+  allocationChangeLogs: many(allocationChangeLogs),
 }));
 
 export const functionalTeamDemands = pgTable(
@@ -286,6 +288,44 @@ export const buildQtyAllocations = pgTable(
   ],
 );
 
+export const allocationChangeLogs = pgTable(
+  "allocation_change_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    buildStageId: uuid("build_stage_id")
+      .notNull()
+      .references(() => buildStages.id, { onDelete: "cascade" }),
+    buildQtyAllocationId: uuid("build_qty_allocation_id")
+      .notNull()
+      .references(() => buildQtyAllocations.id, { onDelete: "cascade" }),
+    configProfileId: uuid("config_profile_id")
+      .notNull()
+      .references(() => configProfiles.id, { onDelete: "cascade" }),
+    actorUserId: text("actor_user_id").notNull(),
+    fieldName: text("field_name").notNull(),
+    beforeValue: jsonb("before_value").$type<unknown>(),
+    afterValue: jsonb("after_value").$type<unknown>(),
+    reason: text("reason").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("allocation_change_logs_project_id_idx").on(table.projectId),
+    index("allocation_change_logs_build_stage_id_idx").on(table.buildStageId),
+    index("allocation_change_logs_allocation_id_idx").on(
+      table.buildQtyAllocationId,
+    ),
+    index("allocation_change_logs_config_profile_id_idx").on(
+      table.configProfileId,
+    ),
+    index("allocation_change_logs_created_at_idx").on(table.createdAt),
+  ],
+);
+
 export const functionalTeamDemandsRelations = relations(
   functionalTeamDemands,
   ({ many, one }) => ({
@@ -314,6 +354,7 @@ export const configProfilesRelations = relations(
     }),
     mappings: many(demandProfileMappings),
     allocations: many(buildQtyAllocations),
+    allocationChangeLogs: many(allocationChangeLogs),
   }),
 );
 
@@ -333,7 +374,7 @@ export const demandProfileMappingsRelations = relations(
 
 export const buildQtyAllocationsRelations = relations(
   buildQtyAllocations,
-  ({ one }) => ({
+  ({ many, one }) => ({
     project: one(projects, {
       fields: [buildQtyAllocations.projectId],
       references: [projects.id],
@@ -344,6 +385,29 @@ export const buildQtyAllocationsRelations = relations(
     }),
     configProfile: one(configProfiles, {
       fields: [buildQtyAllocations.configProfileId],
+      references: [configProfiles.id],
+    }),
+    changeLogs: many(allocationChangeLogs),
+  }),
+);
+
+export const allocationChangeLogsRelations = relations(
+  allocationChangeLogs,
+  ({ one }) => ({
+    project: one(projects, {
+      fields: [allocationChangeLogs.projectId],
+      references: [projects.id],
+    }),
+    buildStage: one(buildStages, {
+      fields: [allocationChangeLogs.buildStageId],
+      references: [buildStages.id],
+    }),
+    buildQtyAllocation: one(buildQtyAllocations, {
+      fields: [allocationChangeLogs.buildQtyAllocationId],
+      references: [buildQtyAllocations.id],
+    }),
+    configProfile: one(configProfiles, {
+      fields: [allocationChangeLogs.configProfileId],
       references: [configProfiles.id],
     }),
   }),
@@ -361,3 +425,5 @@ export type DemandProfileMapping = typeof demandProfileMappings.$inferSelect;
 export type NewDemandProfileMapping = typeof demandProfileMappings.$inferInsert;
 export type BuildQtyAllocation = typeof buildQtyAllocations.$inferSelect;
 export type NewBuildQtyAllocation = typeof buildQtyAllocations.$inferInsert;
+export type AllocationChangeLog = typeof allocationChangeLogs.$inferSelect;
+export type NewAllocationChangeLog = typeof allocationChangeLogs.$inferInsert;

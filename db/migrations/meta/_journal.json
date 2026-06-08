@@ -15,6 +15,13 @@
       "when": 1780923466732,
       "tag": "0001_fantastic_millenium_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780925788638,
+      "tag": "0002_glorious_war_machine",
+      "breakpoints": true
     }
   ]
 }
