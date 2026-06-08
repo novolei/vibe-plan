@@ -14,6 +14,8 @@ import {
   DemandProfileMappingForm,
   FunctionalTeamDemandForm,
   ReadinessSignalForm,
+  ScheduleDependencyForm,
+  ScheduleTaskForm,
 } from "@/components/planning/action-forms";
 import {
   Card,
@@ -41,6 +43,7 @@ import {
   listReadinessRecordsForProject,
   type ReadinessStatus,
 } from "@/lib/domain/readiness";
+import { listScheduleRecordsForProject } from "@/lib/domain/schedule";
 
 type ProjectPageProps = {
   params: Promise<{
@@ -72,6 +75,11 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     readinessAuditLogs,
     readinessSignals,
     readinessWarnings,
+    scheduleAuditLogs,
+    scheduleDependencies,
+    scheduleLinks,
+    scheduleTasks,
+    scheduleWarnings,
     blockers,
     stages,
   } = projectPageData;
@@ -114,6 +122,12 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       label: allocationLabelById.get(allocation.id) ?? allocation.id,
       value: allocation.id,
     }));
+  const matrixEntryLabelById = new Map(
+    matrixEntries.map((entry) => [
+      entry.id,
+      allocationLabelById.get(entry.buildQtyAllocationId) ?? entry.id,
+    ]),
+  );
   const readinessTargetOptions = [
     { label: `Project / ${project.name}`, value: `project:${project.id}` },
     ...stages.map((stage) => ({
@@ -121,7 +135,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       value: `build_stage:${stage.id}`,
     })),
     ...matrixEntries.map((entry) => ({
-      label: `Matrix / ${allocationLabelById.get(entry.buildQtyAllocationId) ?? entry.id}`,
+      label: `Matrix / ${matrixEntryLabelById.get(entry.id) ?? entry.id}`,
       value: `build_matrix_entry:${entry.id}`,
     })),
   ];
@@ -130,12 +144,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       signal.targetType,
       signal.targetId,
       {
-        matrixEntryLabelById: new Map(
-          matrixEntries.map((entry) => [
-            entry.id,
-            allocationLabelById.get(entry.buildQtyAllocationId) ?? entry.id,
-          ]),
-        ),
+        matrixEntryLabelById,
         projectName: project.name,
         stageNameById,
       },
@@ -178,6 +187,48 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   });
   const visibleBlockers = blockers.filter(
     (blocker) => blocker.status !== "resolved",
+  );
+  const scheduleLinkedObjectOptions = [
+    { label: `Project / ${project.name}`, value: `project:${project.id}` },
+    ...stages.map((stage) => ({
+      label: `Stage / ${stage.name}`,
+      value: `build_stage:${stage.id}`,
+    })),
+    ...profiles.map((profile) => ({
+      label: `Profile / ${profileLabelById.get(profile.id) ?? profile.id}`,
+      value: `config_profile:${profile.id}`,
+    })),
+    ...allocations.map((allocation) => ({
+      label: `Allocation / ${allocationLabelById.get(allocation.id) ?? allocation.id}`,
+      value: `build_qty_allocation:${allocation.id}`,
+    })),
+    ...matrixEntries.map((entry) => ({
+      label: `Matrix / ${matrixEntryLabelById.get(entry.id) ?? entry.id}`,
+      value: `build_matrix_entry:${entry.id}`,
+    })),
+    ...readinessSignals.map((signal) => ({
+      label: `Readiness / ${signal.summary}`,
+      value: `readiness_signal:${signal.id}`,
+    })),
+    ...blockers.map((blocker) => ({
+      label: `Blocker / ${blocker.title}`,
+      value: `blocker:${blocker.id}`,
+    })),
+  ];
+  const scheduleTaskOptions = scheduleTasks.map((task) => ({
+    label: task.title,
+    value: task.id,
+  }));
+  const scheduleLinksByTaskId = new Map<string, typeof scheduleLinks>();
+
+  for (const link of scheduleLinks) {
+    const existing = scheduleLinksByTaskId.get(link.scheduleTaskId) ?? [];
+    existing.push(link);
+    scheduleLinksByTaskId.set(link.scheduleTaskId, existing);
+  }
+
+  const scheduleTaskById = new Map(
+    scheduleTasks.map((task) => [task.id, task]),
   );
   const operationsByProposalId = new Map<string, typeof aiOperations>();
 
@@ -561,6 +612,184 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
               profileOptions={profileOptions}
               projectId={project.id}
             />
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Schedule extension</CardTitle>
+            <CardDescription>
+              {scheduleTasks.length} task{scheduleTasks.length === 1 ? "" : "s"}{" "}
+              / {scheduleDependencies.length} dependenc
+              {scheduleDependencies.length === 1 ? "y" : "ies"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-6">
+            {scheduleWarnings.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No schedule dependency warnings.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {scheduleWarnings.map((warning) => (
+                  <div className="rounded-lg border p-4" key={warning.id}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-medium">{warning.title}</div>
+                      <Badge
+                        variant={
+                          warning.severity === "warning"
+                            ? "destructive"
+                            : "secondary"
+                        }
+                      >
+                        {warning.severity}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {warning.detail}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="grid gap-6 xl:grid-cols-2">
+              <div className="rounded-lg border p-4">
+                <div className="mb-4 text-sm font-medium">
+                  Add schedule task
+                </div>
+                <ScheduleTaskForm
+                  linkedObjectOptions={scheduleLinkedObjectOptions}
+                  projectId={project.id}
+                  stageOptions={stageOptions}
+                />
+              </div>
+              <div className="rounded-lg border p-4">
+                <div className="mb-4 text-sm font-medium">Add dependency</div>
+                <ScheduleDependencyForm
+                  projectId={project.id}
+                  taskOptions={scheduleTaskOptions}
+                />
+              </div>
+            </div>
+
+            {scheduleTasks.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No schedule tasks.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Task</TableHead>
+                      <TableHead>Stage</TableHead>
+                      <TableHead>Linked object</TableHead>
+                      <TableHead>Planned</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Owner</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {scheduleTasks.map((task) => {
+                      const primaryLink = scheduleLinksByTaskId.get(
+                        task.id,
+                      )?.[0];
+
+                      return (
+                        <TableRow key={task.id}>
+                          <TableCell className="font-medium">
+                            {task.title}
+                          </TableCell>
+                          <TableCell>
+                            {stageNameById.get(task.buildStageId)}
+                          </TableCell>
+                          <TableCell>
+                            {primaryLink
+                              ? scheduleLinkedObjectLabel(
+                                  primaryLink.linkedObjectType,
+                                  primaryLink.linkedObjectId,
+                                  {
+                                    allocationLabelById,
+                                    blockerTitleById: new Map(
+                                      blockers.map((blocker) => [
+                                        blocker.id,
+                                        blocker.title,
+                                      ]),
+                                    ),
+                                    matrixEntryLabelById,
+                                    profileLabelById,
+                                    projectName: project.name,
+                                    readinessSignalLabelById: new Map(
+                                      readinessSignals.map((signal) => [
+                                        signal.id,
+                                        signal.summary,
+                                      ]),
+                                    ),
+                                    stageNameById,
+                                  },
+                                )
+                              : "-"}
+                          </TableCell>
+                          <TableCell>
+                            {formatDateOnly(task.plannedStartDate)} -{" "}
+                            {formatDateOnly(task.plannedEndDate)}
+                          </TableCell>
+                          <TableCell>
+                            {formatStatusLabel(task.status)}
+                          </TableCell>
+                          <TableCell>{task.ownerUserId}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {scheduleDependencies.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No schedule dependencies.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Predecessor</TableHead>
+                      <TableHead>Successor</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Lag</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {scheduleDependencies.map((dependency) => (
+                      <TableRow key={dependency.id}>
+                        <TableCell>
+                          {scheduleTaskById.get(dependency.predecessorTaskId)
+                            ?.title ?? "-"}
+                        </TableCell>
+                        <TableCell>
+                          {scheduleTaskById.get(dependency.successorTaskId)
+                            ?.title ?? "-"}
+                        </TableCell>
+                        <TableCell>
+                          {formatStatusLabel(dependency.dependencyType)}
+                        </TableCell>
+                        <TableCell>{dependency.lagDays}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <div className="text-sm text-muted-foreground">
+              {scheduleAuditLogs.length} schedule audit{" "}
+              {scheduleAuditLogs.length === 1 ? "entry" : "entries"}
+            </div>
           </CardContent>
         </Card>
       </section>
@@ -1012,12 +1241,14 @@ async function loadProjectPageData(projectId: string) {
       planningRecords,
       aiProposalRecords,
       readinessRecords,
+      scheduleRecords,
     ] = await Promise.all([
       getProjectForCurrentUser(projectId),
       listBuildStagesForProject(projectId),
       listPlanningRecordsForProject(projectId),
       listAiProposalsForProject(projectId),
       listReadinessRecordsForProject(projectId),
+      listScheduleRecordsForProject(projectId),
     ]);
 
     return {
@@ -1026,6 +1257,7 @@ async function loadProjectPageData(projectId: string) {
       ...planningRecords,
       ...aiProposalRecords,
       ...readinessRecords,
+      ...scheduleRecords,
     };
   } catch {
     return null;
@@ -1057,6 +1289,13 @@ function formatDateTime(value: Date) {
 
 function formatNullableDateTime(value: Date | null) {
   return value ? formatDateTime(value) : "-";
+}
+
+function formatDateOnly(value: Date) {
+  return new Intl.DateTimeFormat("en", {
+    day: "2-digit",
+    month: "short",
+  }).format(value);
 }
 
 function formatLogValue(value: unknown) {
@@ -1111,6 +1350,50 @@ function targetLabelFor(
   }
 
   return `${formatStatusLabel(targetType)} / ${targetId.slice(0, 8)}`;
+}
+
+function scheduleLinkedObjectLabel(
+  linkedObjectType: string,
+  linkedObjectId: string,
+  input: {
+    allocationLabelById: Map<string, string>;
+    blockerTitleById: Map<string, string>;
+    matrixEntryLabelById: Map<string, string>;
+    profileLabelById: Map<string, string>;
+    projectName: string;
+    readinessSignalLabelById: Map<string, string>;
+    stageNameById: Map<string, string>;
+  },
+) {
+  if (linkedObjectType === "project") {
+    return `Project / ${input.projectName}`;
+  }
+
+  if (linkedObjectType === "build_stage") {
+    return `Stage / ${input.stageNameById.get(linkedObjectId) ?? linkedObjectId.slice(0, 8)}`;
+  }
+
+  if (linkedObjectType === "config_profile") {
+    return `Profile / ${input.profileLabelById.get(linkedObjectId) ?? linkedObjectId.slice(0, 8)}`;
+  }
+
+  if (linkedObjectType === "build_qty_allocation") {
+    return `Allocation / ${input.allocationLabelById.get(linkedObjectId) ?? linkedObjectId.slice(0, 8)}`;
+  }
+
+  if (linkedObjectType === "build_matrix_entry") {
+    return `Matrix / ${input.matrixEntryLabelById.get(linkedObjectId) ?? linkedObjectId.slice(0, 8)}`;
+  }
+
+  if (linkedObjectType === "readiness_signal") {
+    return `Readiness / ${input.readinessSignalLabelById.get(linkedObjectId) ?? linkedObjectId.slice(0, 8)}`;
+  }
+
+  if (linkedObjectType === "blocker") {
+    return `Blocker / ${input.blockerTitleById.get(linkedObjectId) ?? linkedObjectId.slice(0, 8)}`;
+  }
+
+  return `${formatStatusLabel(linkedObjectType)} / ${linkedObjectId.slice(0, 8)}`;
 }
 
 function formatConfidence(value: number | null) {

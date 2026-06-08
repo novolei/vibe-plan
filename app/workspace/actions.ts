@@ -21,6 +21,11 @@ import {
   type ReadinessTargetType,
 } from "@/lib/domain/readiness";
 import {
+  createScheduleDependency,
+  createScheduleTask,
+  type ScheduleLinkedObjectType,
+} from "@/lib/domain/schedule";
+import {
   aiProposalReviewSchema,
   aiStageSummaryProposalCreateSchema,
   blockerCreateSchema,
@@ -32,6 +37,8 @@ import {
   functionalTeamDemandCreateSchema,
   projectInitSchema,
   readinessSignalCreateSchema,
+  scheduleDependencyCreateSchema,
+  scheduleTaskCreateSchema,
 } from "@/lib/validation/planning";
 
 export type WorkspaceActionState = {
@@ -385,6 +392,83 @@ export async function createBlockerAction(
   }
 }
 
+export async function createScheduleTaskAction(
+  _prevState: WorkspaceActionState,
+  formData: FormData,
+): Promise<WorkspaceActionState> {
+  try {
+    const parsed = scheduleTaskCreateSchema.parse({
+      projectId: formData.get("projectId"),
+      buildStageId: formData.get("buildStageId"),
+      linkedObjectKey: formData.get("linkedObjectKey"),
+      title: formData.get("title"),
+      description: formData.get("description") || undefined,
+      status: formData.get("status"),
+      priority: formData.get("priority"),
+      plannedStartDate: formData.get("plannedStartDate"),
+      plannedEndDate: formData.get("plannedEndDate"),
+    });
+    const link = parseScheduleLinkedObjectKey(parsed.linkedObjectKey);
+
+    await createScheduleTask({
+      buildStageId: parsed.buildStageId,
+      description: parsed.description,
+      link,
+      plannedEndDate: parsed.plannedEndDate,
+      plannedStartDate: parsed.plannedStartDate,
+      priority: parsed.priority,
+      projectId: parsed.projectId,
+      status: parsed.status,
+      title: parsed.title,
+    });
+
+    revalidatePath(`/workspace/projects/${parsed.projectId}`);
+    return successState("Schedule task saved.");
+  } catch (error) {
+    return actionErrorState(error, formData, [
+      "projectId",
+      "buildStageId",
+      "linkedObjectKey",
+      "title",
+      "description",
+      "status",
+      "priority",
+      "plannedStartDate",
+      "plannedEndDate",
+    ]);
+  }
+}
+
+export async function createScheduleDependencyAction(
+  _prevState: WorkspaceActionState,
+  formData: FormData,
+): Promise<WorkspaceActionState> {
+  try {
+    const parsed = scheduleDependencyCreateSchema.parse({
+      projectId: formData.get("projectId"),
+      predecessorTaskId: formData.get("predecessorTaskId"),
+      successorTaskId: formData.get("successorTaskId"),
+      dependencyType: formData.get("dependencyType"),
+      lagDays: formData.get("lagDays"),
+      notes: formData.get("notes") || undefined,
+    });
+
+    await createScheduleDependency(parsed);
+
+    revalidatePath(`/workspace/projects/${parsed.projectId}`);
+    return successState("Schedule dependency saved.");
+  } catch (error) {
+    return actionErrorState(error, formData, [
+      "projectId",
+      "predecessorTaskId",
+      "successorTaskId",
+      "dependencyType",
+      "lagDays",
+      "notes",
+    ]);
+  }
+}
+
 function actionErrorState(
   error: unknown,
   formData: FormData,
@@ -493,4 +577,18 @@ function parseReadinessTargetKey(value: string): {
   const targetId = value.slice(separatorIndex + 1);
 
   return { targetId, targetType };
+}
+
+function parseScheduleLinkedObjectKey(value: string): {
+  linkedObjectId: string;
+  linkedObjectType: ScheduleLinkedObjectType;
+} {
+  const separatorIndex = value.indexOf(":");
+  const linkedObjectType = value.slice(
+    0,
+    separatorIndex,
+  ) as ScheduleLinkedObjectType;
+  const linkedObjectId = value.slice(separatorIndex + 1);
+
+  return { linkedObjectId, linkedObjectType };
 }

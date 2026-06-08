@@ -11,6 +11,8 @@ import {
   createFunctionalTeamDemandAction,
   createProjectAction,
   createReadinessSignalAction,
+  createScheduleDependencyAction,
+  createScheduleTaskAction,
   generateStageSummaryProposalAction,
   reviewAiProposalAction,
   type WorkspaceActionState,
@@ -766,6 +768,190 @@ export function BlockerForm({
         pending={pending}
       >
         Save blocker
+      </SubmitButton>
+      <ActionMessage className="sm:col-span-2" state={state} />
+    </form>
+  );
+}
+
+export function ScheduleTaskForm({
+  linkedObjectOptions,
+  projectId,
+  stageOptions,
+}: ProjectScopedFormProps & {
+  linkedObjectOptions: Option[];
+  stageOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    createScheduleTaskAction,
+    initialWorkspaceActionState,
+  );
+  const disabled =
+    stageOptions.length === 0 || linkedObjectOptions.length === 0;
+
+  return (
+    <form
+      action={action}
+      className="grid gap-3 sm:grid-cols-2"
+      key={formKey(state)}
+    >
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={stageOptions.length === 0}
+        name="buildStageId"
+        options={stageOptions}
+        placeholder="Build stage"
+        state={state}
+      />
+      <SelectField
+        disabled={linkedObjectOptions.length === 0}
+        name="linkedObjectKey"
+        options={linkedObjectOptions}
+        placeholder="Linked object"
+        state={state}
+      />
+      <FieldError name="buildStageId" state={state} />
+      <FieldError name="linkedObjectKey" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("title")}
+        aria-invalid={hasFieldError(state, "title")}
+        defaultValue={valueFor(state, "title")}
+        name="title"
+        placeholder="Task title"
+        required
+      />
+      <Input
+        aria-describedby={fieldErrorId("priority")}
+        aria-invalid={hasFieldError(state, "priority")}
+        defaultValue={valueFor(state, "priority") || "normal"}
+        name="priority"
+        placeholder="Priority"
+        required
+      />
+      <FieldError name="title" state={state} />
+      <FieldError name="priority" state={state} />
+      <SelectField
+        disabled={disabled}
+        name="status"
+        options={[
+          { label: "Todo", value: "todo" },
+          { label: "In Progress", value: "in_progress" },
+          { label: "Done", value: "done" },
+          { label: "Blocked", value: "blocked" },
+          { label: "Canceled", value: "canceled" },
+        ]}
+        placeholder="Task status"
+        state={state}
+      />
+      <Input
+        aria-describedby={fieldErrorId("plannedStartDate")}
+        aria-invalid={hasFieldError(state, "plannedStartDate")}
+        defaultValue={valueFor(state, "plannedStartDate")}
+        name="plannedStartDate"
+        required
+        type="date"
+      />
+      <FieldError name="status" state={state} />
+      <FieldError name="plannedStartDate" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("plannedEndDate")}
+        aria-invalid={hasFieldError(state, "plannedEndDate")}
+        defaultValue={valueFor(state, "plannedEndDate")}
+        name="plannedEndDate"
+        required
+        type="date"
+      />
+      <div />
+      <FieldError name="plannedEndDate" state={state} />
+      <div />
+      <Textarea
+        className="sm:col-span-2"
+        defaultValue={valueFor(state, "description")}
+        name="description"
+        placeholder="Task description"
+      />
+      <SubmitButton
+        className="sm:col-span-2"
+        disabled={disabled}
+        pending={pending}
+      >
+        Save schedule task
+      </SubmitButton>
+      <ActionMessage className="sm:col-span-2" state={state} />
+    </form>
+  );
+}
+
+export function ScheduleDependencyForm({
+  projectId,
+  taskOptions,
+}: ProjectScopedFormProps & {
+  taskOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    createScheduleDependencyAction,
+    initialWorkspaceActionState,
+  );
+  const disabled = taskOptions.length < 2;
+
+  return (
+    <form
+      action={action}
+      className="grid gap-3 sm:grid-cols-2"
+      key={formKey(state)}
+    >
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={disabled}
+        name="predecessorTaskId"
+        options={taskOptions}
+        placeholder="Predecessor"
+        state={state}
+      />
+      <SelectField
+        disabled={disabled}
+        name="successorTaskId"
+        options={taskOptions}
+        placeholder="Successor"
+        state={state}
+      />
+      <FieldError name="predecessorTaskId" state={state} />
+      <FieldError name="successorTaskId" state={state} />
+      <SelectField
+        disabled={disabled}
+        name="dependencyType"
+        options={[
+          { label: "Finish to Start", value: "finish_to_start" },
+          { label: "Start to Start", value: "start_to_start" },
+          { label: "Finish to Finish", value: "finish_to_finish" },
+          { label: "Start to Finish", value: "start_to_finish" },
+        ]}
+        placeholder="Dependency type"
+        state={state}
+      />
+      <Input
+        aria-describedby={fieldErrorId("lagDays")}
+        aria-invalid={hasFieldError(state, "lagDays")}
+        defaultValue={valueFor(state, "lagDays") || "0"}
+        name="lagDays"
+        placeholder="Lag days"
+        required
+        type="number"
+      />
+      <FieldError name="dependencyType" state={state} />
+      <FieldError name="lagDays" state={state} />
+      <Input
+        className="sm:col-span-2"
+        defaultValue={valueFor(state, "notes")}
+        name="notes"
+        placeholder="Dependency notes"
+      />
+      <SubmitButton
+        className="sm:col-span-2"
+        disabled={disabled}
+        pending={pending}
+      >
+        Save dependency
       </SubmitButton>
       <ActionMessage className="sm:col-span-2" state={state} />
     </form>

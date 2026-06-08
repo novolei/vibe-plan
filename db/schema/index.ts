@@ -52,6 +52,21 @@ export const blockerStatus = pgEnum("blocker_status", [
   "accepted_risk",
 ]);
 
+export const scheduleTaskStatus = pgEnum("schedule_task_status", [
+  "todo",
+  "in_progress",
+  "done",
+  "blocked",
+  "canceled",
+]);
+
+export const scheduleDependencyType = pgEnum("schedule_dependency_type", [
+  "finish_to_start",
+  "start_to_start",
+  "finish_to_finish",
+  "start_to_finish",
+]);
+
 export const aiRunStatus = pgEnum("ai_run_status", [
   "running",
   "succeeded",
@@ -170,6 +185,11 @@ export const projectsRelations = relations(projects, ({ many }) => ({
   readinessRollups: many(readinessRollups),
   blockers: many(blockers),
   readinessAuditLogs: many(readinessAuditLogs),
+  scheduleTasks: many(scheduleTasks),
+  scheduleTaskLinks: many(scheduleTaskLinks),
+  scheduleDependencies: many(scheduleDependencies),
+  scheduleWorklogs: many(scheduleWorklogs),
+  scheduleAuditLogs: many(scheduleAuditLogs),
   aiRuns: many(aiRuns),
   aiProposals: many(aiProposals),
   aiAuditEvents: many(aiAuditEvents),
@@ -189,6 +209,8 @@ export const buildStagesRelations = relations(buildStages, ({ many, one }) => ({
   readinessRollups: many(readinessRollups),
   blockers: many(blockers),
   readinessAuditLogs: many(readinessAuditLogs),
+  scheduleTasks: many(scheduleTasks),
+  scheduleAuditLogs: many(scheduleAuditLogs),
   aiRuns: many(aiRuns),
   aiProposals: many(aiProposals),
   aiAuditEvents: many(aiAuditEvents),
@@ -654,6 +676,224 @@ export const readinessAuditLogs = pgTable(
   ],
 );
 
+export const scheduleTasks = pgTable(
+  "schedule_tasks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    buildStageId: uuid("build_stage_id")
+      .notNull()
+      .references(() => buildStages.id, { onDelete: "cascade" }),
+    parentTaskId: uuid("parent_task_id"),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    taskType: text("task_type").notNull().default("build_plan"),
+    status: scheduleTaskStatus("status").notNull().default("todo"),
+    priority: text("priority").notNull().default("normal"),
+    ownerUserId: text("owner_user_id").notNull(),
+    assigneeUserId: text("assignee_user_id").notNull().default(""),
+    plannedStartDate: timestamp("planned_start_date", {
+      withTimezone: true,
+    }).notNull(),
+    plannedEndDate: timestamp("planned_end_date", {
+      withTimezone: true,
+    }).notNull(),
+    actualStartDate: timestamp("actual_start_date", { withTimezone: true }),
+    actualEndDate: timestamp("actual_end_date", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    durationDays: integer("duration_days").notNull().default(0),
+    progressPercent: integer("progress_percent").notNull().default(0),
+    notes: text("notes").notNull().default(""),
+    aiSource: jsonb("ai_source").$type<Record<string, unknown>>(),
+    proposalRef: text("proposal_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("schedule_tasks_project_id_idx").on(table.projectId),
+    index("schedule_tasks_build_stage_id_idx").on(table.buildStageId),
+    index("schedule_tasks_parent_task_id_idx").on(table.parentTaskId),
+    index("schedule_tasks_status_idx").on(table.status),
+    index("schedule_tasks_planned_dates_idx").on(
+      table.plannedStartDate,
+      table.plannedEndDate,
+    ),
+    check(
+      "schedule_tasks_duration_days_nonnegative",
+      sql`${table.durationDays} >= 0`,
+    ),
+    check(
+      "schedule_tasks_progress_percent_range",
+      sql`${table.progressPercent} >= 0 and ${table.progressPercent} <= 100`,
+    ),
+    check(
+      "schedule_tasks_planned_date_order",
+      sql`${table.plannedEndDate} >= ${table.plannedStartDate}`,
+    ),
+  ],
+);
+
+export const scheduleTaskLinks = pgTable(
+  "schedule_task_links",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    scheduleTaskId: uuid("schedule_task_id")
+      .notNull()
+      .references(() => scheduleTasks.id, { onDelete: "cascade" }),
+    linkedObjectType: text("linked_object_type").notNull(),
+    linkedObjectId: text("linked_object_id").notNull(),
+    linkRole: text("link_role").notNull().default("primary"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("schedule_task_links_project_id_idx").on(table.projectId),
+    index("schedule_task_links_task_id_idx").on(table.scheduleTaskId),
+    index("schedule_task_links_object_idx").on(
+      table.linkedObjectType,
+      table.linkedObjectId,
+    ),
+    uniqueIndex("schedule_task_links_active_task_object_uidx")
+      .on(table.scheduleTaskId, table.linkedObjectType, table.linkedObjectId)
+      .where(sql`${table.deletedAt} is null`),
+  ],
+);
+
+export const scheduleDependencies = pgTable(
+  "schedule_dependencies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    predecessorTaskId: uuid("predecessor_task_id")
+      .notNull()
+      .references(() => scheduleTasks.id, { onDelete: "cascade" }),
+    successorTaskId: uuid("successor_task_id")
+      .notNull()
+      .references(() => scheduleTasks.id, { onDelete: "cascade" }),
+    dependencyType: scheduleDependencyType("dependency_type")
+      .notNull()
+      .default("finish_to_start"),
+    lagDays: integer("lag_days").notNull().default(0),
+    createdByUserId: text("created_by_user_id").notNull(),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("schedule_dependencies_project_id_idx").on(table.projectId),
+    index("schedule_dependencies_predecessor_idx").on(table.predecessorTaskId),
+    index("schedule_dependencies_successor_idx").on(table.successorTaskId),
+    uniqueIndex("schedule_dependencies_active_pair_uidx")
+      .on(table.predecessorTaskId, table.successorTaskId, table.dependencyType)
+      .where(sql`${table.deletedAt} is null`),
+    check(
+      "schedule_dependencies_no_self_dependency",
+      sql`${table.predecessorTaskId} <> ${table.successorTaskId}`,
+    ),
+  ],
+);
+
+export const scheduleWorklogs = pgTable(
+  "schedule_worklogs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    scheduleTaskId: uuid("schedule_task_id")
+      .notNull()
+      .references(() => scheduleTasks.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    workDate: timestamp("work_date", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    durationMinutes: integer("duration_minutes").notNull().default(0),
+    summary: text("summary").notNull().default(""),
+    blockerNote: text("blocker_note").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("schedule_worklogs_project_id_idx").on(table.projectId),
+    index("schedule_worklogs_task_id_idx").on(table.scheduleTaskId),
+    index("schedule_worklogs_work_date_idx").on(table.workDate),
+    check(
+      "schedule_worklogs_duration_minutes_nonnegative",
+      sql`${table.durationMinutes} >= 0`,
+    ),
+  ],
+);
+
+export const scheduleAuditLogs = pgTable(
+  "schedule_audit_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    buildStageId: uuid("build_stage_id").references(() => buildStages.id, {
+      onDelete: "set null",
+    }),
+    scheduleTaskId: uuid("schedule_task_id").references(
+      () => scheduleTasks.id,
+      { onDelete: "set null" },
+    ),
+    scheduleDependencyId: uuid("schedule_dependency_id").references(
+      () => scheduleDependencies.id,
+      { onDelete: "set null" },
+    ),
+    scheduleWorklogId: uuid("schedule_worklog_id").references(
+      () => scheduleWorklogs.id,
+      { onDelete: "set null" },
+    ),
+    actorUserId: text("actor_user_id").notNull(),
+    changedField: text("changed_field").notNull().default(""),
+    beforeValue: jsonb("before_value").$type<unknown>(),
+    afterValue: jsonb("after_value").$type<unknown>(),
+    reason: text("reason").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("schedule_audit_logs_project_id_idx").on(table.projectId),
+    index("schedule_audit_logs_build_stage_id_idx").on(table.buildStageId),
+    index("schedule_audit_logs_task_id_idx").on(table.scheduleTaskId),
+    index("schedule_audit_logs_dependency_id_idx").on(
+      table.scheduleDependencyId,
+    ),
+    index("schedule_audit_logs_worklog_id_idx").on(table.scheduleWorklogId),
+    index("schedule_audit_logs_created_at_idx").on(table.createdAt),
+  ],
+);
+
 export const aiAgents = pgTable(
   "ai_agents",
   {
@@ -1036,6 +1276,105 @@ export const readinessAuditLogsRelations = relations(
   }),
 );
 
+export const scheduleTasksRelations = relations(
+  scheduleTasks,
+  ({ many, one }) => ({
+    project: one(projects, {
+      fields: [scheduleTasks.projectId],
+      references: [projects.id],
+    }),
+    buildStage: one(buildStages, {
+      fields: [scheduleTasks.buildStageId],
+      references: [buildStages.id],
+    }),
+    links: many(scheduleTaskLinks),
+    predecessorDependencies: many(scheduleDependencies, {
+      relationName: "predecessorTask",
+    }),
+    successorDependencies: many(scheduleDependencies, {
+      relationName: "successorTask",
+    }),
+    worklogs: many(scheduleWorklogs),
+    auditLogs: many(scheduleAuditLogs),
+  }),
+);
+
+export const scheduleTaskLinksRelations = relations(
+  scheduleTaskLinks,
+  ({ one }) => ({
+    project: one(projects, {
+      fields: [scheduleTaskLinks.projectId],
+      references: [projects.id],
+    }),
+    scheduleTask: one(scheduleTasks, {
+      fields: [scheduleTaskLinks.scheduleTaskId],
+      references: [scheduleTasks.id],
+    }),
+  }),
+);
+
+export const scheduleDependenciesRelations = relations(
+  scheduleDependencies,
+  ({ many, one }) => ({
+    project: one(projects, {
+      fields: [scheduleDependencies.projectId],
+      references: [projects.id],
+    }),
+    predecessorTask: one(scheduleTasks, {
+      fields: [scheduleDependencies.predecessorTaskId],
+      references: [scheduleTasks.id],
+      relationName: "predecessorTask",
+    }),
+    successorTask: one(scheduleTasks, {
+      fields: [scheduleDependencies.successorTaskId],
+      references: [scheduleTasks.id],
+      relationName: "successorTask",
+    }),
+    auditLogs: many(scheduleAuditLogs),
+  }),
+);
+
+export const scheduleWorklogsRelations = relations(
+  scheduleWorklogs,
+  ({ many, one }) => ({
+    project: one(projects, {
+      fields: [scheduleWorklogs.projectId],
+      references: [projects.id],
+    }),
+    scheduleTask: one(scheduleTasks, {
+      fields: [scheduleWorklogs.scheduleTaskId],
+      references: [scheduleTasks.id],
+    }),
+    auditLogs: many(scheduleAuditLogs),
+  }),
+);
+
+export const scheduleAuditLogsRelations = relations(
+  scheduleAuditLogs,
+  ({ one }) => ({
+    project: one(projects, {
+      fields: [scheduleAuditLogs.projectId],
+      references: [projects.id],
+    }),
+    buildStage: one(buildStages, {
+      fields: [scheduleAuditLogs.buildStageId],
+      references: [buildStages.id],
+    }),
+    scheduleTask: one(scheduleTasks, {
+      fields: [scheduleAuditLogs.scheduleTaskId],
+      references: [scheduleTasks.id],
+    }),
+    scheduleDependency: one(scheduleDependencies, {
+      fields: [scheduleAuditLogs.scheduleDependencyId],
+      references: [scheduleDependencies.id],
+    }),
+    scheduleWorklog: one(scheduleWorklogs, {
+      fields: [scheduleAuditLogs.scheduleWorklogId],
+      references: [scheduleWorklogs.id],
+    }),
+  }),
+);
+
 export const allocationChangeLogsRelations = relations(
   allocationChangeLogs,
   ({ one }) => ({
@@ -1161,6 +1500,16 @@ export type ReadinessSignoff = typeof readinessSignoffs.$inferSelect;
 export type NewReadinessSignoff = typeof readinessSignoffs.$inferInsert;
 export type ReadinessAuditLog = typeof readinessAuditLogs.$inferSelect;
 export type NewReadinessAuditLog = typeof readinessAuditLogs.$inferInsert;
+export type ScheduleTask = typeof scheduleTasks.$inferSelect;
+export type NewScheduleTask = typeof scheduleTasks.$inferInsert;
+export type ScheduleTaskLink = typeof scheduleTaskLinks.$inferSelect;
+export type NewScheduleTaskLink = typeof scheduleTaskLinks.$inferInsert;
+export type ScheduleDependency = typeof scheduleDependencies.$inferSelect;
+export type NewScheduleDependency = typeof scheduleDependencies.$inferInsert;
+export type ScheduleWorklog = typeof scheduleWorklogs.$inferSelect;
+export type NewScheduleWorklog = typeof scheduleWorklogs.$inferInsert;
+export type ScheduleAuditLog = typeof scheduleAuditLogs.$inferSelect;
+export type NewScheduleAuditLog = typeof scheduleAuditLogs.$inferInsert;
 export type AIAgent = typeof aiAgents.$inferSelect;
 export type NewAIAgent = typeof aiAgents.$inferInsert;
 export type AIRun = typeof aiRuns.$inferSelect;

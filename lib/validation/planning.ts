@@ -13,6 +13,12 @@ const readinessTargetKeySchema = z
     /^(project|build_stage|build_matrix_entry):.+/,
     "Readiness target is required",
   );
+const scheduleLinkedObjectKeySchema = z
+  .string()
+  .regex(
+    /^(project|build_stage|config_profile|build_qty_allocation|build_matrix_entry|readiness_signal|blocker):.+/,
+    "Schedule linked object is required",
+  );
 
 export const projectInitSchema = z.object({
   name: z.string().trim().min(1, "Project name is required"),
@@ -118,4 +124,30 @@ export const blockerCreateSchema = z.object({
   dueDate: optionalFormDateSchema,
   mitigation: z.string().trim().optional(),
   decisionNeeded: z.boolean().optional(),
+});
+
+export const scheduleTaskCreateSchema = z.object({
+  projectId: z.string().uuid(),
+  buildStageId: z.string().uuid(),
+  linkedObjectKey: scheduleLinkedObjectKeySchema,
+  title: z.string().trim().min(1, "Task title is required"),
+  description: z.string().trim().optional(),
+  status: z.enum(["todo", "in_progress", "done", "blocked", "canceled"]),
+  priority: z.string().trim().min(1, "Priority is required"),
+  plannedStartDate: z.coerce.date(),
+  plannedEndDate: z.coerce.date(),
+});
+
+export const scheduleDependencyCreateSchema = z.object({
+  projectId: z.string().uuid(),
+  predecessorTaskId: z.string().uuid(),
+  successorTaskId: z.string().uuid(),
+  dependencyType: z.enum([
+    "finish_to_start",
+    "start_to_start",
+    "finish_to_finish",
+    "start_to_finish",
+  ]),
+  lagDays: z.coerce.number().int(),
+  notes: z.string().trim().optional(),
 });

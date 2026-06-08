@@ -43,6 +43,13 @@
       "when": 1780931103876,
       "tag": "0005_plain_dorian_gray",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780931965938,
+      "tag": "0006_nostalgic_the_renegades",
+      "breakpoints": true
     }
   ]
 }
