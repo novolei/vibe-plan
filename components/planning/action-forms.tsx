@@ -1,0 +1,527 @@
+"use client";
+
+import { useActionState } from "react";
+
+import {
+  createBuildStageAction,
+  createConfigProfileAction,
+  createDemandProfileMappingAction,
+  createFunctionalTeamDemandAction,
+  createProjectAction,
+  type WorkspaceActionState,
+  upsertBuildQtyAllocationAction,
+} from "@/app/workspace/actions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+
+type Option = {
+  label: string;
+  value: string;
+};
+
+type ProjectScopedFormProps = {
+  projectId: string;
+};
+
+const selectClassName =
+  "h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
+
+const initialWorkspaceActionState: WorkspaceActionState = {
+  message: "",
+  status: "idle",
+};
+
+export function ProjectCreateForm() {
+  const [state, action, pending] = useActionState(
+    createProjectAction,
+    initialWorkspaceActionState,
+  );
+
+  return (
+    <form action={action} className="flex flex-col gap-4" key={formKey(state)}>
+      <Input
+        aria-describedby={fieldErrorId("name")}
+        aria-invalid={hasFieldError(state, "name")}
+        defaultValue={valueFor(state, "name")}
+        name="name"
+        placeholder="Project name"
+        required
+      />
+      <FieldError name="name" state={state} />
+      <Textarea
+        aria-describedby={fieldErrorId("description")}
+        aria-invalid={hasFieldError(state, "description")}
+        defaultValue={valueFor(state, "description")}
+        name="description"
+        placeholder="Project description"
+        required
+      />
+      <FieldError name="description" state={state} />
+      <SubmitButton pending={pending}>Create project</SubmitButton>
+      <ActionMessage state={state} />
+    </form>
+  );
+}
+
+export function BuildStageForm({ projectId }: ProjectScopedFormProps) {
+  const [state, action, pending] = useActionState(
+    createBuildStageAction,
+    initialWorkspaceActionState,
+  );
+
+  return (
+    <form action={action} className="flex flex-col gap-4" key={formKey(state)}>
+      <input name="projectId" type="hidden" value={projectId} />
+      <Input
+        aria-describedby={fieldErrorId("name")}
+        aria-invalid={hasFieldError(state, "name")}
+        defaultValue={valueFor(state, "name")}
+        name="name"
+        placeholder="Stage name, e.g. EVT"
+        required
+      />
+      <FieldError name="name" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("goal")}
+        aria-invalid={hasFieldError(state, "goal")}
+        defaultValue={valueFor(state, "goal")}
+        name="goal"
+        placeholder="Stage goal"
+        required
+      />
+      <FieldError name="goal" state={state} />
+      <Textarea
+        aria-describedby={fieldErrorId("description")}
+        aria-invalid={hasFieldError(state, "description")}
+        defaultValue={valueFor(state, "description")}
+        name="description"
+        placeholder="Stage description"
+        required
+      />
+      <FieldError name="description" state={state} />
+      <Input
+        defaultValue={valueFor(state, "templateSource")}
+        name="templateSource"
+        placeholder="Template source, optional"
+      />
+      <SubmitButton pending={pending}>Create stage</SubmitButton>
+      <ActionMessage state={state} />
+    </form>
+  );
+}
+
+export function FunctionalTeamDemandForm({
+  projectId,
+  stageOptions,
+}: ProjectScopedFormProps & {
+  stageOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    createFunctionalTeamDemandAction,
+    initialWorkspaceActionState,
+  );
+  const disabled = stageOptions.length === 0;
+
+  return (
+    <form
+      action={action}
+      className="grid gap-3 sm:grid-cols-2"
+      key={formKey(state)}
+    >
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={disabled}
+        name="buildStageId"
+        options={stageOptions}
+        placeholder="Build stage"
+        state={state}
+      />
+      <Input
+        aria-describedby={fieldErrorId("team")}
+        aria-invalid={hasFieldError(state, "team")}
+        defaultValue={valueFor(state, "team")}
+        name="team"
+        placeholder="Team, e.g. EE"
+        required
+      />
+      <FieldError name="buildStageId" state={state} />
+      <FieldError name="team" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("purpose")}
+        aria-invalid={hasFieldError(state, "purpose")}
+        defaultValue={valueFor(state, "purpose")}
+        name="purpose"
+        placeholder="Purpose"
+        required
+      />
+      <Input
+        aria-describedby={fieldErrorId("requestedQty")}
+        aria-invalid={hasFieldError(state, "requestedQty")}
+        defaultValue={valueFor(state, "requestedQty")}
+        min={0}
+        name="requestedQty"
+        placeholder="Requested qty"
+        required
+        type="number"
+      />
+      <FieldError name="purpose" state={state} />
+      <FieldError name="requestedQty" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("priority")}
+        aria-invalid={hasFieldError(state, "priority")}
+        defaultValue={valueFor(state, "priority")}
+        name="priority"
+        placeholder="Priority"
+        required
+      />
+      <Input
+        defaultValue={valueFor(state, "notes")}
+        name="notes"
+        placeholder="Notes"
+      />
+      <FieldError name="priority" state={state} />
+      <div />
+      <SubmitButton
+        className="sm:col-span-2"
+        disabled={disabled}
+        pending={pending}
+      >
+        Add demand
+      </SubmitButton>
+      <ActionMessage className="sm:col-span-2" state={state} />
+    </form>
+  );
+}
+
+export function ConfigProfileForm({
+  projectId,
+  stageOptions,
+}: ProjectScopedFormProps & {
+  stageOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    createConfigProfileAction,
+    initialWorkspaceActionState,
+  );
+  const disabled = stageOptions.length === 0;
+
+  return (
+    <form
+      action={action}
+      className="grid gap-3 sm:grid-cols-2"
+      key={formKey(state)}
+    >
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={disabled}
+        name="buildStageId"
+        options={stageOptions}
+        placeholder="Build stage"
+        state={state}
+      />
+      <Input
+        aria-describedby={fieldErrorId("productRevision")}
+        aria-invalid={hasFieldError(state, "productRevision")}
+        defaultValue={valueFor(state, "productRevision")}
+        name="productRevision"
+        placeholder="Product revision"
+        required
+      />
+      <FieldError name="buildStageId" state={state} />
+      <FieldError name="productRevision" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("testPurpose")}
+        aria-invalid={hasFieldError(state, "testPurpose")}
+        defaultValue={valueFor(state, "testPurpose")}
+        name="testPurpose"
+        placeholder="Test purpose"
+        required
+      />
+      <Input
+        aria-describedby={fieldErrorId("marketOrRegion")}
+        aria-invalid={hasFieldError(state, "marketOrRegion")}
+        defaultValue={valueFor(state, "marketOrRegion")}
+        name="marketOrRegion"
+        placeholder="Market or region"
+        required
+      />
+      <FieldError name="testPurpose" state={state} />
+      <FieldError name="marketOrRegion" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("variant")}
+        aria-invalid={hasFieldError(state, "variant")}
+        defaultValue={valueFor(state, "variant")}
+        name="variant"
+        placeholder="Variant"
+        required
+      />
+      <Input
+        aria-describedby={fieldErrorId("processVariant")}
+        aria-invalid={hasFieldError(state, "processVariant")}
+        defaultValue={valueFor(state, "processVariant")}
+        name="processVariant"
+        placeholder="Process variant"
+        required
+      />
+      <FieldError name="variant" state={state} />
+      <FieldError name="processVariant" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("materialVariant")}
+        aria-invalid={hasFieldError(state, "materialVariant")}
+        defaultValue={valueFor(state, "materialVariant")}
+        name="materialVariant"
+        placeholder="Material variant"
+        required
+      />
+      <div />
+      <FieldError name="materialVariant" state={state} />
+      <div />
+      <SubmitButton
+        className="sm:col-span-2"
+        disabled={disabled}
+        pending={pending}
+      >
+        Add profile
+      </SubmitButton>
+      <ActionMessage className="sm:col-span-2" state={state} />
+    </form>
+  );
+}
+
+export function DemandProfileMappingForm({
+  demandOptions,
+  profileOptions,
+  projectId,
+}: ProjectScopedFormProps & {
+  demandOptions: Option[];
+  profileOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    createDemandProfileMappingAction,
+    initialWorkspaceActionState,
+  );
+  const disabled = demandOptions.length === 0 || profileOptions.length === 0;
+
+  return (
+    <form action={action} className="grid gap-3" key={formKey(state)}>
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={demandOptions.length === 0}
+        name="functionalTeamDemandId"
+        options={demandOptions}
+        placeholder="Demand"
+        state={state}
+      />
+      <FieldError name="functionalTeamDemandId" state={state} />
+      <SelectField
+        disabled={profileOptions.length === 0}
+        name="configProfileId"
+        options={profileOptions}
+        placeholder="Config profile"
+        state={state}
+      />
+      <FieldError name="configProfileId" state={state} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Input
+          aria-describedby={fieldErrorId("contributionQty")}
+          aria-invalid={hasFieldError(state, "contributionQty")}
+          defaultValue={valueFor(state, "contributionQty")}
+          min={0}
+          name="contributionQty"
+          placeholder="Contribution qty"
+          required
+          type="number"
+        />
+        <Input
+          aria-describedby={fieldErrorId("weight")}
+          aria-invalid={hasFieldError(state, "weight")}
+          defaultValue={valueFor(state, "weight")}
+          min={0}
+          name="weight"
+          placeholder="Weight"
+          type="number"
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FieldError name="contributionQty" state={state} />
+        <FieldError name="weight" state={state} />
+      </div>
+      <Input
+        defaultValue={valueFor(state, "rationale")}
+        name="rationale"
+        placeholder="Rationale"
+      />
+      <SubmitButton disabled={disabled} pending={pending}>
+        Add mapping
+      </SubmitButton>
+      <ActionMessage state={state} />
+    </form>
+  );
+}
+
+export function BuildQtyAllocationForm({
+  profileOptions,
+  projectId,
+}: ProjectScopedFormProps & {
+  profileOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    upsertBuildQtyAllocationAction,
+    initialWorkspaceActionState,
+  );
+  const disabled = profileOptions.length === 0;
+
+  return (
+    <form action={action} className="grid gap-3" key={formKey(state)}>
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={disabled}
+        name="configProfileId"
+        options={profileOptions}
+        placeholder="Config profile"
+        state={state}
+      />
+      <FieldError name="configProfileId" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("allocatedQty")}
+        aria-invalid={hasFieldError(state, "allocatedQty")}
+        defaultValue={valueFor(state, "allocatedQty")}
+        min={0}
+        name="allocatedQty"
+        placeholder="Allocated qty"
+        required
+        type="number"
+      />
+      <FieldError name="allocatedQty" state={state} />
+      <Input
+        defaultValue={valueFor(state, "rationale")}
+        name="rationale"
+        placeholder="Rationale"
+      />
+      <SubmitButton disabled={disabled} pending={pending}>
+        Set allocation
+      </SubmitButton>
+      <ActionMessage state={state} />
+    </form>
+  );
+}
+
+function SelectField({
+  disabled,
+  name,
+  options,
+  placeholder,
+  state,
+}: {
+  disabled?: boolean;
+  name: string;
+  options: Option[];
+  placeholder: string;
+  state: WorkspaceActionState;
+}) {
+  return (
+    <select
+      aria-describedby={fieldErrorId(name)}
+      aria-invalid={hasFieldError(state, name)}
+      className={selectClassName}
+      defaultValue={valueFor(state, name)}
+      disabled={disabled}
+      name={name}
+      required
+    >
+      <option value="">{placeholder}</option>
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function SubmitButton({
+  children,
+  className,
+  disabled,
+  pending,
+}: {
+  children: string;
+  className?: string;
+  disabled?: boolean;
+  pending: boolean;
+}) {
+  return (
+    <Button className={className} disabled={disabled || pending} type="submit">
+      {pending ? "Saving..." : children}
+    </Button>
+  );
+}
+
+function ActionMessage({
+  className,
+  state,
+}: {
+  className?: string;
+  state: WorkspaceActionState;
+}) {
+  if (state.status === "idle" || !state.message) {
+    return null;
+  }
+
+  return (
+    <p
+      aria-live="polite"
+      className={cn(
+        "text-sm",
+        state.status === "error" ? "text-destructive" : "text-muted-foreground",
+        className,
+      )}
+    >
+      {state.message}
+    </p>
+  );
+}
+
+function FieldError({
+  name,
+  state,
+}: {
+  name: string;
+  state: WorkspaceActionState;
+}) {
+  const message = state.fieldErrors?.[name]?.[0];
+
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <p className="text-sm text-destructive" id={fieldErrorId(name)}>
+      {message}
+    </p>
+  );
+}
+
+function fieldErrorId(name: string) {
+  return `${name}-error`;
+}
+
+function hasFieldError(state: WorkspaceActionState, name: string) {
+  return Boolean(state.fieldErrors?.[name]?.length);
+}
+
+function valueFor(state: WorkspaceActionState, name: string) {
+  return state.values?.[name] ?? "";
+}
+
+function formKey(state: WorkspaceActionState) {
+  return [
+    state.status,
+    state.message,
+    ...Object.entries(state.values ?? {}).map(
+      ([key, value]) => `${key}:${value}`,
+    ),
+  ].join("|");
+}

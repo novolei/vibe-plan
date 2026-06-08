@@ -9,10 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { createProjectAction } from "@/app/workspace/actions";
+import { ProjectCreateForm } from "@/components/planning/action-forms";
 import { listProjectsForCurrentUser } from "@/lib/domain/projects";
 
 export default async function WorkspacePage() {
@@ -84,15 +81,7 @@ export default async function WorkspacePage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={createProjectAction} className="flex flex-col gap-4">
-              <Input name="name" placeholder="Project name" required />
-              <Textarea
-                name="description"
-                placeholder="Project description"
-                required
-              />
-              <Button type="submit">Create project</Button>
-            </form>
+            <ProjectCreateForm />
           </CardContent>
         </Card>
       </section>

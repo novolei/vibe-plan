@@ -2,15 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
-import {
-  createBuildStageAction,
-  createConfigProfileAction,
-  createDemandProfileMappingAction,
-  createFunctionalTeamDemandAction,
-  upsertBuildQtyAllocationAction,
-} from "@/app/workspace/actions";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import {
+  BuildQtyAllocationForm,
+  BuildStageForm,
+  ConfigProfileForm,
+  DemandProfileMappingForm,
+  FunctionalTeamDemandForm,
+} from "@/components/planning/action-forms";
 import {
   Card,
   CardContent,
@@ -18,7 +17,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -27,7 +25,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import {
   getProjectForCurrentUser,
   listBuildStagesForProject,
@@ -75,6 +72,18 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       .filter((allocation) => allocation.status === "active")
       .map((allocation) => [allocation.configProfileId, allocation]),
   );
+  const stageOptions = stages.map((stage) => ({
+    label: stage.name,
+    value: stage.id,
+  }));
+  const demandOptions = demands.map((demand) => ({
+    label: demandLabelById.get(demand.id) ?? demand.team,
+    value: demand.id,
+  }));
+  const profileOptions = profiles.map((profile) => ({
+    label: profileLabelById.get(profile.id) ?? formatProfileLabel(profile),
+    value: profile.id,
+  }));
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10">
@@ -146,24 +155,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form
-              action={createBuildStageAction}
-              className="flex flex-col gap-4"
-            >
-              <input name="projectId" type="hidden" value={project.id} />
-              <Input name="name" placeholder="Stage name, e.g. EVT" required />
-              <Input name="goal" placeholder="Stage goal" required />
-              <Textarea
-                name="description"
-                placeholder="Stage description"
-                required
-              />
-              <Input
-                name="templateSource"
-                placeholder="Template source, optional"
-              />
-              <Button type="submit">Create stage</Button>
-            </form>
+            <BuildStageForm projectId={project.id} />
           </CardContent>
         </Card>
       </section>
@@ -309,43 +301,10 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
               </div>
             )}
 
-            <form
-              action={createFunctionalTeamDemandAction}
-              className="grid gap-3 sm:grid-cols-2"
-            >
-              <input name="projectId" type="hidden" value={project.id} />
-              <select
-                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={stages.length === 0}
-                name="buildStageId"
-                required
-              >
-                <option value="">Build stage</option>
-                {stages.map((stage) => (
-                  <option key={stage.id} value={stage.id}>
-                    {stage.name}
-                  </option>
-                ))}
-              </select>
-              <Input name="team" placeholder="Team, e.g. EE" required />
-              <Input name="purpose" placeholder="Purpose" required />
-              <Input
-                min={0}
-                name="requestedQty"
-                placeholder="Requested qty"
-                required
-                type="number"
-              />
-              <Input name="priority" placeholder="Priority" required />
-              <Input name="notes" placeholder="Notes" />
-              <Button
-                className="sm:col-span-2"
-                disabled={stages.length === 0}
-                type="submit"
-              >
-                Add demand
-              </Button>
-            </form>
+            <FunctionalTeamDemandForm
+              projectId={project.id}
+              stageOptions={stageOptions}
+            />
           </CardContent>
         </Card>
 
@@ -390,54 +349,10 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
               </div>
             )}
 
-            <form
-              action={createConfigProfileAction}
-              className="grid gap-3 sm:grid-cols-2"
-            >
-              <input name="projectId" type="hidden" value={project.id} />
-              <select
-                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={stages.length === 0}
-                name="buildStageId"
-                required
-              >
-                <option value="">Build stage</option>
-                {stages.map((stage) => (
-                  <option key={stage.id} value={stage.id}>
-                    {stage.name}
-                  </option>
-                ))}
-              </select>
-              <Input
-                name="productRevision"
-                placeholder="Product revision"
-                required
-              />
-              <Input name="testPurpose" placeholder="Test purpose" required />
-              <Input
-                name="marketOrRegion"
-                placeholder="Market or region"
-                required
-              />
-              <Input name="variant" placeholder="Variant" required />
-              <Input
-                name="processVariant"
-                placeholder="Process variant"
-                required
-              />
-              <Input
-                name="materialVariant"
-                placeholder="Material variant"
-                required
-              />
-              <Button
-                className="sm:col-span-2"
-                disabled={stages.length === 0}
-                type="submit"
-              >
-                Add profile
-              </Button>
-            </form>
+            <ConfigProfileForm
+              projectId={project.id}
+              stageOptions={stageOptions}
+            />
           </CardContent>
         </Card>
       </section>
@@ -484,60 +399,11 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
               </div>
             )}
 
-            <form
-              action={createDemandProfileMappingAction}
-              className="grid gap-3"
-            >
-              <input name="projectId" type="hidden" value={project.id} />
-              <select
-                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={demands.length === 0}
-                name="functionalTeamDemandId"
-                required
-              >
-                <option value="">Demand</option>
-                {demands.map((demand) => (
-                  <option key={demand.id} value={demand.id}>
-                    {demandLabelById.get(demand.id)}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={profiles.length === 0}
-                name="configProfileId"
-                required
-              >
-                <option value="">Config profile</option>
-                {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profileLabelById.get(profile.id)}
-                  </option>
-                ))}
-              </select>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Input
-                  min={0}
-                  name="contributionQty"
-                  placeholder="Contribution qty"
-                  required
-                  type="number"
-                />
-                <Input
-                  min={0}
-                  name="weight"
-                  placeholder="Weight"
-                  type="number"
-                />
-              </div>
-              <Input name="rationale" placeholder="Rationale" />
-              <Button
-                disabled={demands.length === 0 || profiles.length === 0}
-                type="submit"
-              >
-                Add mapping
-              </Button>
-            </form>
+            <DemandProfileMappingForm
+              demandOptions={demandOptions}
+              profileOptions={profileOptions}
+              projectId={project.id}
+            />
           </CardContent>
         </Card>
 
@@ -589,36 +455,10 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
               </div>
             )}
 
-            <form
-              action={upsertBuildQtyAllocationAction}
-              className="grid gap-3"
-            >
-              <input name="projectId" type="hidden" value={project.id} />
-              <select
-                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={profiles.length === 0}
-                name="configProfileId"
-                required
-              >
-                <option value="">Config profile</option>
-                {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profileLabelById.get(profile.id)}
-                  </option>
-                ))}
-              </select>
-              <Input
-                min={0}
-                name="allocatedQty"
-                placeholder="Allocated qty"
-                required
-                type="number"
-              />
-              <Input name="rationale" placeholder="Rationale" />
-              <Button disabled={profiles.length === 0} type="submit">
-                Set allocation
-              </Button>
-            </form>
+            <BuildQtyAllocationForm
+              profileOptions={profileOptions}
+              projectId={project.id}
+            />
           </CardContent>
         </Card>
       </section>
