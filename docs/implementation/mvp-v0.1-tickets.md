@@ -273,3 +273,7 @@ Acceptance:
 - The workflow works in a local browser.
 - Any required env or DB setup is documented.
 
+Implementation note: MVP walkthrough verification starts with a DB-backed
+fixture test that creates Project -> Stage -> Demand -> Profile -> Mapping ->
+Allocation records. A later browser automation layer can reuse the same fixture
+to assert rendered warnings and audit state.
