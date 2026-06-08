@@ -277,3 +277,28 @@ Implementation note: MVP walkthrough verification starts with a DB-backed
 fixture test that creates Project -> Stage -> Demand -> Profile -> Mapping ->
 Allocation records. A later browser automation layer can reuse the same fixture
 to assert rendered warnings and audit state.
+
+## Milestone 6: Build Matrix MVP
+
+### Ticket 6.1: Process and Material Matrix Entries
+
+Goal: Map allocated config profiles into the first build matrix shape required
+by ADR 0001 and ADR 0005.
+
+Scope:
+
+- Add `build_matrix_entries`.
+- Link matrix entries to project, build stage, config profile, and build qty
+  allocation.
+- Capture build process route, key material variant, owner teams, readiness,
+  and notes.
+- Show matrix entries in the project workspace.
+- Allow one active matrix entry per allocation, with soft-delete based
+  recreation later.
+
+Acceptance:
+
+- An allocated profile can be mapped to process route and key material variant.
+- Matrix entries require active allocations.
+- Greenlight, At Risk, and Blocked readiness states can be stored.
+- Duplicate active matrix entries for the same allocation are rejected.

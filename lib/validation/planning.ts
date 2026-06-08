@@ -55,3 +55,20 @@ export const buildQtyAllocationCreateSchema = z.object({
   allocatedQty: formIntegerSchema,
   rationale: z.string().trim().optional(),
 });
+
+export const buildMatrixEntryCreateSchema = z.object({
+  projectId: z.string().uuid(),
+  buildQtyAllocationId: z.string().uuid(),
+  buildProcessRoute: z
+    .string()
+    .trim()
+    .min(1, "Build process route is required"),
+  keyMaterialVariant: z
+    .string()
+    .trim()
+    .min(1, "Key material variant is required"),
+  processOwnerTeam: z.string().trim().optional(),
+  materialOwnerTeam: z.string().trim().optional(),
+  readinessStatus: z.enum(["greenlight", "at_risk", "blocked"]),
+  notes: z.string().trim().optional(),
+});

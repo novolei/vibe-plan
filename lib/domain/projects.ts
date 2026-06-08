@@ -4,6 +4,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 
 import {
   allocationChangeLogs,
+  buildMatrixEntries,
   buildQtyAllocations,
   buildStages,
   configProfiles,
@@ -14,6 +15,7 @@ import {
 import { db } from "@/db/client";
 import { requireUser } from "@/lib/auth/session";
 import { buildAllocationChangeLogValues } from "@/lib/domain/allocation-change-logs";
+import { assertBuildMatrixAllocationIsActive } from "@/lib/domain/build-matrix-rules";
 import { buildPlanningWarnings } from "@/lib/domain/planning-rules";
 
 type CreateProjectInput = {
@@ -64,6 +66,17 @@ type CreateBuildQtyAllocationInput = {
   configProfileId: string;
   allocatedQty: number;
   rationale?: string;
+};
+
+type CreateBuildMatrixEntryInput = {
+  projectId: string;
+  buildQtyAllocationId: string;
+  buildProcessRoute: string;
+  keyMaterialVariant: string;
+  processOwnerTeam?: string;
+  materialOwnerTeam?: string;
+  readinessStatus: "greenlight" | "at_risk" | "blocked";
+  notes?: string;
 };
 
 export async function listProjectsForCurrentUser() {
@@ -147,41 +160,54 @@ export async function createBuildStage(input: CreateBuildStageInput) {
 export async function listPlanningRecordsForProject(projectId: string) {
   await getProjectForCurrentUser(projectId);
 
-  const [demands, profiles, mappings, allocations, allocationLogs] =
-    await Promise.all([
-      db.query.functionalTeamDemands.findMany({
-        where: and(
-          eq(functionalTeamDemands.projectId, projectId),
-          isNull(functionalTeamDemands.deletedAt),
-        ),
-        orderBy: [
-          asc(functionalTeamDemands.createdAt),
-          asc(functionalTeamDemands.team),
-        ],
-      }),
-      db.query.configProfiles.findMany({
-        where: and(
-          eq(configProfiles.projectId, projectId),
-          isNull(configProfiles.deletedAt),
-        ),
-        orderBy: [asc(configProfiles.createdAt)],
-      }),
-      db.query.demandProfileMappings.findMany({
-        where: isNull(demandProfileMappings.deletedAt),
-        orderBy: [asc(demandProfileMappings.createdAt)],
-      }),
-      db.query.buildQtyAllocations.findMany({
-        where: and(
-          eq(buildQtyAllocations.projectId, projectId),
-          isNull(buildQtyAllocations.deletedAt),
-        ),
-        orderBy: [asc(buildQtyAllocations.createdAt)],
-      }),
-      db.query.allocationChangeLogs.findMany({
-        where: eq(allocationChangeLogs.projectId, projectId),
-        orderBy: [asc(allocationChangeLogs.createdAt)],
-      }),
-    ]);
+  const [
+    demands,
+    profiles,
+    mappings,
+    allocations,
+    matrixEntries,
+    allocationLogs,
+  ] = await Promise.all([
+    db.query.functionalTeamDemands.findMany({
+      where: and(
+        eq(functionalTeamDemands.projectId, projectId),
+        isNull(functionalTeamDemands.deletedAt),
+      ),
+      orderBy: [
+        asc(functionalTeamDemands.createdAt),
+        asc(functionalTeamDemands.team),
+      ],
+    }),
+    db.query.configProfiles.findMany({
+      where: and(
+        eq(configProfiles.projectId, projectId),
+        isNull(configProfiles.deletedAt),
+      ),
+      orderBy: [asc(configProfiles.createdAt)],
+    }),
+    db.query.demandProfileMappings.findMany({
+      where: isNull(demandProfileMappings.deletedAt),
+      orderBy: [asc(demandProfileMappings.createdAt)],
+    }),
+    db.query.buildQtyAllocations.findMany({
+      where: and(
+        eq(buildQtyAllocations.projectId, projectId),
+        isNull(buildQtyAllocations.deletedAt),
+      ),
+      orderBy: [asc(buildQtyAllocations.createdAt)],
+    }),
+    db.query.buildMatrixEntries.findMany({
+      where: and(
+        eq(buildMatrixEntries.projectId, projectId),
+        isNull(buildMatrixEntries.deletedAt),
+      ),
+      orderBy: [asc(buildMatrixEntries.createdAt)],
+    }),
+    db.query.allocationChangeLogs.findMany({
+      where: eq(allocationChangeLogs.projectId, projectId),
+      orderBy: [asc(allocationChangeLogs.createdAt)],
+    }),
+  ]);
 
   const projectDemandIds = new Set(demands.map((demand) => demand.id));
   const projectProfileIds = new Set(profiles.map((profile) => profile.id));
@@ -196,6 +222,7 @@ export async function listPlanningRecordsForProject(projectId: string) {
     profiles,
     mappings: projectMappings,
     allocations,
+    matrixEntries,
     allocationLogs,
     planningWarnings: buildPlanningWarnings({
       allocations,
@@ -375,6 +402,35 @@ export async function upsertBuildQtyAllocation(
   });
 }
 
+export async function createBuildMatrixEntry(
+  input: CreateBuildMatrixEntryInput,
+) {
+  const allocation = await getBuildQtyAllocationForCurrentUser(
+    input.projectId,
+    input.buildQtyAllocationId,
+  );
+
+  assertBuildMatrixAllocationIsActive(allocation);
+
+  const [entry] = await db
+    .insert(buildMatrixEntries)
+    .values({
+      projectId: input.projectId,
+      buildStageId: allocation.buildStageId,
+      configProfileId: allocation.configProfileId,
+      buildQtyAllocationId: input.buildQtyAllocationId,
+      buildProcessRoute: input.buildProcessRoute,
+      keyMaterialVariant: input.keyMaterialVariant,
+      processOwnerTeam: input.processOwnerTeam || "",
+      materialOwnerTeam: input.materialOwnerTeam || "",
+      readinessStatus: input.readinessStatus,
+      notes: input.notes || "",
+    })
+    .returning();
+
+  return entry;
+}
+
 async function writeAllocationChangeLogs(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   input: {
@@ -458,4 +514,25 @@ async function getConfigProfileForCurrentUser(
   }
 
   return profile;
+}
+
+async function getBuildQtyAllocationForCurrentUser(
+  projectId: string,
+  allocationId: string,
+) {
+  await getProjectForCurrentUser(projectId);
+
+  const allocation = await db.query.buildQtyAllocations.findFirst({
+    where: and(
+      eq(buildQtyAllocations.id, allocationId),
+      eq(buildQtyAllocations.projectId, projectId),
+      isNull(buildQtyAllocations.deletedAt),
+    ),
+  });
+
+  if (!allocation) {
+    throw new Error("Build qty allocation not found");
+  }
+
+  return allocation;
 }

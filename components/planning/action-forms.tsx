@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 
 import {
+  createBuildMatrixEntryAction,
   createBuildStageAction,
   createConfigProfileAction,
   createDemandProfileMappingAction,
@@ -404,6 +405,91 @@ export function BuildQtyAllocationForm({
         Set allocation
       </SubmitButton>
       <ActionMessage state={state} />
+    </form>
+  );
+}
+
+export function BuildMatrixEntryForm({
+  allocationOptions,
+  projectId,
+}: ProjectScopedFormProps & {
+  allocationOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    createBuildMatrixEntryAction,
+    initialWorkspaceActionState,
+  );
+  const disabled = allocationOptions.length === 0;
+
+  return (
+    <form
+      action={action}
+      className="grid gap-3 sm:grid-cols-2"
+      key={formKey(state)}
+    >
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={disabled}
+        name="buildQtyAllocationId"
+        options={allocationOptions}
+        placeholder="Allocation"
+        state={state}
+      />
+      <SelectField
+        disabled={disabled}
+        name="readinessStatus"
+        options={[
+          { label: "Greenlight", value: "greenlight" },
+          { label: "At Risk", value: "at_risk" },
+          { label: "Blocked", value: "blocked" },
+        ]}
+        placeholder="Readiness"
+        state={state}
+      />
+      <FieldError name="buildQtyAllocationId" state={state} />
+      <FieldError name="readinessStatus" state={state} />
+      <Input
+        aria-describedby={fieldErrorId("buildProcessRoute")}
+        aria-invalid={hasFieldError(state, "buildProcessRoute")}
+        defaultValue={valueFor(state, "buildProcessRoute")}
+        name="buildProcessRoute"
+        placeholder="Build process route"
+        required
+      />
+      <Input
+        aria-describedby={fieldErrorId("keyMaterialVariant")}
+        aria-invalid={hasFieldError(state, "keyMaterialVariant")}
+        defaultValue={valueFor(state, "keyMaterialVariant")}
+        name="keyMaterialVariant"
+        placeholder="Key material variant"
+        required
+      />
+      <FieldError name="buildProcessRoute" state={state} />
+      <FieldError name="keyMaterialVariant" state={state} />
+      <Input
+        defaultValue={valueFor(state, "processOwnerTeam")}
+        name="processOwnerTeam"
+        placeholder="Process owner team"
+      />
+      <Input
+        defaultValue={valueFor(state, "materialOwnerTeam")}
+        name="materialOwnerTeam"
+        placeholder="Material owner team"
+      />
+      <Textarea
+        className="sm:col-span-2"
+        defaultValue={valueFor(state, "notes")}
+        name="notes"
+        placeholder="Matrix notes"
+      />
+      <SubmitButton
+        className="sm:col-span-2"
+        disabled={disabled}
+        pending={pending}
+      >
+        Save matrix entry
+      </SubmitButton>
+      <ActionMessage className="sm:col-span-2" state={state} />
     </form>
   );
 }

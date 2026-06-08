@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ZodError } from "zod";
 
 import {
+  createBuildMatrixEntry,
   createBuildStage,
   createConfigProfile,
   createDemandProfileMapping,
@@ -13,6 +14,7 @@ import {
   upsertBuildQtyAllocation,
 } from "@/lib/domain/projects";
 import {
+  buildMatrixEntryCreateSchema,
   buildQtyAllocationCreateSchema,
   buildStageCreateSchema,
   configProfileCreateSchema,
@@ -196,6 +198,40 @@ export async function upsertBuildQtyAllocationAction(
       "configProfileId",
       "allocatedQty",
       "rationale",
+    ]);
+  }
+}
+
+export async function createBuildMatrixEntryAction(
+  _prevState: WorkspaceActionState,
+  formData: FormData,
+): Promise<WorkspaceActionState> {
+  try {
+    const parsed = buildMatrixEntryCreateSchema.parse({
+      projectId: formData.get("projectId"),
+      buildQtyAllocationId: formData.get("buildQtyAllocationId"),
+      buildProcessRoute: formData.get("buildProcessRoute"),
+      keyMaterialVariant: formData.get("keyMaterialVariant"),
+      processOwnerTeam: formData.get("processOwnerTeam") || undefined,
+      materialOwnerTeam: formData.get("materialOwnerTeam") || undefined,
+      readinessStatus: formData.get("readinessStatus"),
+      notes: formData.get("notes") || undefined,
+    });
+
+    await createBuildMatrixEntry(parsed);
+
+    revalidatePath(`/workspace/projects/${parsed.projectId}`);
+    return successState("Matrix entry saved.");
+  } catch (error) {
+    return actionErrorState(error, formData, [
+      "projectId",
+      "buildQtyAllocationId",
+      "buildProcessRoute",
+      "keyMaterialVariant",
+      "processOwnerTeam",
+      "materialOwnerTeam",
+      "readinessStatus",
+      "notes",
     ]);
   }
 }

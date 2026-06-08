@@ -32,6 +32,12 @@ export const allocationStatus = pgEnum("allocation_status", [
   "superseded",
 ]);
 
+export const matrixReadinessStatus = pgEnum("matrix_readiness_status", [
+  "greenlight",
+  "at_risk",
+  "blocked",
+]);
+
 export const projects = pgTable(
   "projects",
   {
@@ -100,6 +106,7 @@ export const projectsRelations = relations(projects, ({ many }) => ({
   demands: many(functionalTeamDemands),
   configProfiles: many(configProfiles),
   buildQtyAllocations: many(buildQtyAllocations),
+  buildMatrixEntries: many(buildMatrixEntries),
   allocationChangeLogs: many(allocationChangeLogs),
 }));
 
@@ -111,6 +118,7 @@ export const buildStagesRelations = relations(buildStages, ({ many, one }) => ({
   demands: many(functionalTeamDemands),
   configProfiles: many(configProfiles),
   buildQtyAllocations: many(buildQtyAllocations),
+  buildMatrixEntries: many(buildMatrixEntries),
   allocationChangeLogs: many(allocationChangeLogs),
 }));
 
@@ -326,6 +334,56 @@ export const allocationChangeLogs = pgTable(
   ],
 );
 
+export const buildMatrixEntries = pgTable(
+  "build_matrix_entries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    buildStageId: uuid("build_stage_id")
+      .notNull()
+      .references(() => buildStages.id, { onDelete: "cascade" }),
+    configProfileId: uuid("config_profile_id")
+      .notNull()
+      .references(() => configProfiles.id, { onDelete: "cascade" }),
+    buildQtyAllocationId: uuid("build_qty_allocation_id")
+      .notNull()
+      .references(() => buildQtyAllocations.id, { onDelete: "cascade" }),
+    buildProcessRoute: text("build_process_route").notNull(),
+    keyMaterialVariant: text("key_material_variant").notNull(),
+    processOwnerTeam: text("process_owner_team").notNull().default(""),
+    materialOwnerTeam: text("material_owner_team").notNull().default(""),
+    readinessStatus: matrixReadinessStatus("readiness_status")
+      .notNull()
+      .default("at_risk"),
+    notes: text("notes").notNull().default(""),
+    aiSource: jsonb("ai_source").$type<Record<string, unknown>>(),
+    proposalRef: text("proposal_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("build_matrix_entries_project_id_idx").on(table.projectId),
+    index("build_matrix_entries_build_stage_id_idx").on(table.buildStageId),
+    index("build_matrix_entries_config_profile_id_idx").on(
+      table.configProfileId,
+    ),
+    index("build_matrix_entries_allocation_id_idx").on(
+      table.buildQtyAllocationId,
+    ),
+    uniqueIndex("build_matrix_entries_active_allocation_uidx")
+      .on(table.buildQtyAllocationId)
+      .where(sql`${table.deletedAt} is null`),
+  ],
+);
+
 export const functionalTeamDemandsRelations = relations(
   functionalTeamDemands,
   ({ many, one }) => ({
@@ -354,6 +412,7 @@ export const configProfilesRelations = relations(
     }),
     mappings: many(demandProfileMappings),
     allocations: many(buildQtyAllocations),
+    buildMatrixEntries: many(buildMatrixEntries),
     allocationChangeLogs: many(allocationChangeLogs),
   }),
 );
@@ -387,7 +446,30 @@ export const buildQtyAllocationsRelations = relations(
       fields: [buildQtyAllocations.configProfileId],
       references: [configProfiles.id],
     }),
+    buildMatrixEntries: many(buildMatrixEntries),
     changeLogs: many(allocationChangeLogs),
+  }),
+);
+
+export const buildMatrixEntriesRelations = relations(
+  buildMatrixEntries,
+  ({ one }) => ({
+    project: one(projects, {
+      fields: [buildMatrixEntries.projectId],
+      references: [projects.id],
+    }),
+    buildStage: one(buildStages, {
+      fields: [buildMatrixEntries.buildStageId],
+      references: [buildStages.id],
+    }),
+    configProfile: one(configProfiles, {
+      fields: [buildMatrixEntries.configProfileId],
+      references: [configProfiles.id],
+    }),
+    buildQtyAllocation: one(buildQtyAllocations, {
+      fields: [buildMatrixEntries.buildQtyAllocationId],
+      references: [buildQtyAllocations.id],
+    }),
   }),
 );
 
@@ -427,3 +509,5 @@ export type BuildQtyAllocation = typeof buildQtyAllocations.$inferSelect;
 export type NewBuildQtyAllocation = typeof buildQtyAllocations.$inferInsert;
 export type AllocationChangeLog = typeof allocationChangeLogs.$inferSelect;
 export type NewAllocationChangeLog = typeof allocationChangeLogs.$inferInsert;
+export type BuildMatrixEntry = typeof buildMatrixEntries.$inferSelect;
+export type NewBuildMatrixEntry = typeof buildMatrixEntries.$inferInsert;

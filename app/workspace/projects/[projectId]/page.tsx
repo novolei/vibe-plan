@@ -4,6 +4,7 @@ import { connection } from "next/server";
 
 import { Badge } from "@/components/ui/badge";
 import {
+  BuildMatrixEntryForm,
   BuildQtyAllocationForm,
   BuildStageForm,
   ConfigProfileForm,
@@ -51,6 +52,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     allocationLogs,
     allocations,
     demands,
+    matrixEntries,
     mappings,
     planningWarnings,
     profiles,
@@ -72,6 +74,12 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       .filter((allocation) => allocation.status === "active")
       .map((allocation) => [allocation.configProfileId, allocation]),
   );
+  const allocationLabelById = new Map(
+    allocations.map((allocation) => [
+      allocation.id,
+      `${profileLabelById.get(allocation.configProfileId) ?? "Profile"} / qty ${allocation.allocatedQty}`,
+    ]),
+  );
   const stageOptions = stages.map((stage) => ({
     label: stage.name,
     value: stage.id,
@@ -84,6 +92,12 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     label: profileLabelById.get(profile.id) ?? formatProfileLabel(profile),
     value: profile.id,
   }));
+  const allocationOptions = allocations
+    .filter((allocation) => allocation.status === "active")
+    .map((allocation) => ({
+      label: allocationLabelById.get(allocation.id) ?? allocation.id,
+      value: allocation.id,
+    }));
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10">
@@ -462,6 +476,78 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
           </CardContent>
         </Card>
       </section>
+
+      <section className="grid gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Build matrix</CardTitle>
+            <CardDescription>
+              {matrixEntries.length} process/material mapping
+              {matrixEntries.length === 1 ? "" : "s"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-5">
+            {allocations.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                Add build qty allocations before mapping process routes and
+                material variants.
+              </div>
+            ) : matrixEntries.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No build matrix entries. Map each allocated profile to its
+                process route and key material variant.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Allocation</TableHead>
+                      <TableHead>Process route</TableHead>
+                      <TableHead>Material variant</TableHead>
+                      <TableHead>Readiness</TableHead>
+                      <TableHead>Owners</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {matrixEntries.map((entry) => (
+                      <TableRow key={entry.id}>
+                        <TableCell className="font-medium">
+                          {allocationLabelById.get(entry.buildQtyAllocationId)}
+                        </TableCell>
+                        <TableCell>{entry.buildProcessRoute}</TableCell>
+                        <TableCell>{entry.keyMaterialVariant}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              entry.readinessStatus === "blocked"
+                                ? "destructive"
+                                : "secondary"
+                            }
+                          >
+                            {formatReadinessLabel(entry.readinessStatus)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {formatOwnerTeams(
+                            entry.processOwnerTeam,
+                            entry.materialOwnerTeam,
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <BuildMatrixEntryForm
+              allocationOptions={allocationOptions}
+              projectId={project.id}
+            />
+          </CardContent>
+        </Card>
+      </section>
     </main>
   );
 }
@@ -513,4 +599,22 @@ function formatLogValue(value: unknown) {
   }
 
   return JSON.stringify(value);
+}
+
+function formatReadinessLabel(value: "at_risk" | "blocked" | "greenlight") {
+  if (value === "greenlight") {
+    return "Greenlight";
+  }
+
+  if (value === "at_risk") {
+    return "At Risk";
+  }
+
+  return "Blocked";
+}
+
+function formatOwnerTeams(processOwnerTeam: string, materialOwnerTeam: string) {
+  const owners = [processOwnerTeam, materialOwnerTeam].filter(Boolean);
+
+  return owners.length === 0 ? "-" : owners.join(" / ");
 }
