@@ -424,16 +424,16 @@ export default async function ProjectPage({
   return (
     <main className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-950">
       <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
-        <header className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.08)]">
+        <header className="relative rounded-2xl border border-slate-200 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.08)]">
           <div className="grid divide-y divide-slate-200 xl:min-h-[88px] xl:grid-cols-[260px_minmax(390px,1fr)_auto] xl:divide-x xl:divide-y-0">
             <div className="flex items-center gap-4 px-5 py-5">
-              <button
-                aria-label="Open navigation"
+              <a
+                aria-label="Jump to workflow navigation"
                 className="flex size-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900"
-                type="button"
+                href="#workflow-rail"
               >
                 <Menu className="size-5" aria-hidden="true" />
-              </button>
+              </a>
               <Link
                 className="group inline-flex items-center gap-3"
                 href="/workspace"
@@ -452,34 +452,93 @@ export default async function ProjectPage({
                 <div className="text-[12px] font-semibold text-slate-400">
                   Project
                 </div>
-                <Link
-                  className="mt-1 inline-flex max-w-full items-center gap-2 text-[18px] font-semibold leading-tight text-slate-950 hover:text-sky-800"
-                  href="/workspace"
-                >
-                  <span className="truncate">{project.name}</span>
-                  <ChevronDown
-                    className="size-4 shrink-0 text-slate-500"
-                    aria-hidden="true"
-                  />
-                </Link>
+                <details className="group relative mt-1 max-w-full">
+                  <summary className="inline-flex max-w-full cursor-pointer list-none items-center gap-2 text-[18px] font-semibold leading-tight text-slate-950 outline-none hover:text-sky-800 focus-visible:rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 [&::-webkit-details-marker]:hidden">
+                    <span className="truncate">{project.name}</span>
+                    <ChevronDown
+                      className="size-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180"
+                      aria-hidden="true"
+                    />
+                  </summary>
+                  <div className="absolute left-0 z-30 mt-3 w-[300px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+                    <div className="text-[11px] font-semibold uppercase tracking-normal text-slate-400">
+                      Current project
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-950">
+                      {project.name}
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
+                      {project.description}
+                    </p>
+                    <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs">
+                      <span className="text-slate-500">Status</span>
+                      <Badge variant="secondary">{project.status}</Badge>
+                    </div>
+                    <Link
+                      className="mt-3 flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                      href="/workspace"
+                    >
+                      Project list
+                      <ChevronRight className="size-4" aria-hidden="true" />
+                    </Link>
+                  </div>
+                </details>
               </div>
 
               <div className="min-w-0">
                 <div className="text-[12px] font-semibold text-slate-400">
                   Stage
                 </div>
-                <Link
-                  className="mt-1 flex h-12 w-full max-w-[245px] items-center justify-between rounded-lg border border-slate-200 bg-white px-4 text-[18px] font-semibold leading-tight text-slate-950 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50/40"
-                  href={activeWorkflowStep.href}
-                >
-                  <span className="truncate">
-                    {activeWorkflowIndex + 1}. {activeWorkflowStep.label}
-                  </span>
-                  <ChevronDown
-                    className="size-4 shrink-0 text-slate-500"
-                    aria-hidden="true"
-                  />
-                </Link>
+                <details className="group relative mt-1 w-full max-w-[245px]">
+                  <summary className="flex h-12 w-full cursor-pointer list-none items-center justify-between rounded-lg border border-slate-200 bg-white px-4 text-[18px] font-semibold leading-tight text-slate-950 shadow-sm outline-none transition-colors hover:border-sky-200 hover:bg-sky-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 [&::-webkit-details-marker]:hidden">
+                    <span className="truncate">
+                      {activeWorkflowIndex + 1}. {activeWorkflowStep.label}
+                    </span>
+                    <ChevronDown
+                      className="size-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180"
+                      aria-hidden="true"
+                    />
+                  </summary>
+                  <div className="absolute left-0 z-30 mt-3 w-[280px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                    {workflowSteps.map((step, index) => {
+                      const Icon = step.icon;
+
+                      return (
+                        <Link
+                          className={[
+                            "grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors",
+                            step.id === activeStep
+                              ? "bg-sky-50 text-sky-950"
+                              : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
+                          ].join(" ")}
+                          href={step.href}
+                          key={step.id}
+                        >
+                          <span
+                            className={[
+                              "flex size-6 items-center justify-center rounded-full text-[11px] font-semibold",
+                              step.id === activeStep
+                                ? "bg-sky-700 text-white"
+                                : "bg-slate-100 text-slate-500",
+                            ].join(" ")}
+                          >
+                            {index + 1}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="flex items-center gap-2 font-medium">
+                              <Icon className="size-3.5" aria-hidden="true" />
+                              {step.label}
+                            </span>
+                            <span className="block truncate text-[11px] text-slate-500">
+                              {step.description}
+                            </span>
+                          </span>
+                          <WorkflowStatusDot status={step.status} />
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </details>
               </div>
             </div>
 
@@ -520,7 +579,10 @@ export default async function ProjectPage({
         </header>
 
         <section className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_310px]">
-          <aside className="h-fit rounded-xl border bg-white p-3 shadow-sm lg:sticky lg:top-4">
+          <aside
+            className="h-fit scroll-mt-4 rounded-xl border bg-white p-3 shadow-sm lg:sticky lg:top-4"
+            id="workflow-rail"
+          >
             <div className="mb-3 flex items-center gap-2 px-2 text-sm font-medium text-slate-900">
               <Workflow className="size-4 text-sky-700" aria-hidden="true" />
               ADR workflow
