@@ -405,6 +405,30 @@ Implementation note: Completed in `db/schema/index.ts`,
 `app/workspace/projects/[projectId]/page.tsx`, and
 `tests/domain/schedule.test.ts`.
 
+### Ticket 9.2: Visual Gantt Preview
+
+Goal: Make schedule tasks readable as a timeline before the full critical path
+and dependency editor arrives.
+
+Scope:
+
+- Render schedule tasks as a relative Gantt-style timeline using planned start
+  and end dates.
+- Reuse the same preview in the Final Dashboard and Schedule Extension page.
+- Keep the preview derived from existing schedule task records only; do not add
+  new schema, auto-rescheduling, or readiness side effects.
+
+Acceptance:
+
+- Schedule bars show relative start position, duration, status color, priority,
+  and date ticks.
+- Empty schedules still show the existing empty state.
+- The Schedule Extension page still preserves the task table and dependency
+  warning flow.
+
+Implementation note: Completed in
+`app/workspace/projects/[projectId]/page.tsx`.
+
 ## Milestone 10: Final Verification
 
 Final verification on branch `codex/adr-spec-design-plan`:
@@ -418,7 +442,7 @@ Final verification on branch `codex/adr-spec-design-plan`:
 Deferred beyond MVP v0.1:
 
 - Formal baseline confirmation workflow.
-- Full visual Gantt chart and critical path UI.
+- Critical path UI and dependency editing on top of the visual Gantt preview.
 - Readiness checklist templates and mandatory gate signoff governance.
 - Project/stage role model beyond current owner-based access.
 - Explicit AI operation apply workflow for baseline-impacting mutations.

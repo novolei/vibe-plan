@@ -52,6 +52,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import type { ScheduleTask } from "@/db/schema";
 import {
   getProjectForCurrentUser,
   listBuildStagesForProject,
@@ -803,59 +804,11 @@ export default async function ProjectPage({
                       No schedule tasks for this stage yet.
                     </div>
                   ) : (
-                    <div className="grid gap-3">
-                      {stageScopedScheduleTasks.map((task) => (
-                        <div
-                          className="grid gap-3 rounded-lg border bg-slate-50/80 p-3 md:grid-cols-[minmax(0,1fr)_210px]"
-                          key={task.id}
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="truncate text-sm font-medium">
-                                {task.title}
-                              </div>
-                              <Badge variant="secondary">
-                                {formatStatusLabel(task.status)}
-                              </Badge>
-                            </div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              {stageNameById.get(task.buildStageId)} /{" "}
-                              {task.priority}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="mb-1 flex justify-between text-xs text-slate-500">
-                              <span>
-                                {formatDateOnly(task.plannedStartDate)}
-                              </span>
-                              <span>{formatDateOnly(task.plannedEndDate)}</span>
-                            </div>
-                            <div className="h-2 rounded-full bg-slate-200">
-                              <div
-                                className={[
-                                  "h-2 rounded-full",
-                                  task.status === "blocked"
-                                    ? "bg-red-500"
-                                    : task.status === "done"
-                                      ? "bg-emerald-500"
-                                      : task.status === "in_progress"
-                                        ? "bg-sky-700"
-                                        : "bg-slate-400",
-                                ].join(" ")}
-                                style={{
-                                  width:
-                                    task.status === "done"
-                                      ? "100%"
-                                      : task.status === "in_progress"
-                                        ? "62%"
-                                        : "36%",
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <ScheduleGanttPreview
+                      compact
+                      stageNameById={stageNameById}
+                      tasks={stageScopedScheduleTasks}
+                    />
                   )}
                 </CardContent>
               </Card>
@@ -1272,72 +1225,96 @@ export default async function ProjectPage({
                       No schedule tasks.
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Task</TableHead>
-                            <TableHead>Stage</TableHead>
-                            <TableHead>Linked object</TableHead>
-                            <TableHead>Planned</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Owner</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {scheduleTasks.map((task) => {
-                            const primaryLink = scheduleLinksByTaskId.get(
-                              task.id,
-                            )?.[0];
+                    <div className="grid gap-4">
+                      <div className="rounded-lg border p-4">
+                        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <div className="text-sm font-medium">
+                              Visual Gantt preview
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              Relative timeline view derived from planned
+                              start/end dates.
+                            </div>
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {scheduleTasks.length} task
+                            {scheduleTasks.length === 1 ? "" : "s"}
+                          </div>
+                        </div>
+                        <ScheduleGanttPreview
+                          stageNameById={stageNameById}
+                          tasks={scheduleTasks}
+                        />
+                      </div>
 
-                            return (
-                              <TableRow key={task.id}>
-                                <TableCell className="font-medium">
-                                  {task.title}
-                                </TableCell>
-                                <TableCell>
-                                  {stageNameById.get(task.buildStageId)}
-                                </TableCell>
-                                <TableCell>
-                                  {primaryLink
-                                    ? scheduleLinkedObjectLabel(
-                                        primaryLink.linkedObjectType,
-                                        primaryLink.linkedObjectId,
-                                        {
-                                          allocationLabelById,
-                                          blockerTitleById: new Map(
-                                            blockers.map((blocker) => [
-                                              blocker.id,
-                                              blocker.title,
-                                            ]),
-                                          ),
-                                          matrixEntryLabelById,
-                                          profileLabelById,
-                                          projectName: project.name,
-                                          readinessSignalLabelById: new Map(
-                                            readinessSignals.map((signal) => [
-                                              signal.id,
-                                              signal.summary,
-                                            ]),
-                                          ),
-                                          stageNameById,
-                                        },
-                                      )
-                                    : "-"}
-                                </TableCell>
-                                <TableCell>
-                                  {formatDateOnly(task.plannedStartDate)} -{" "}
-                                  {formatDateOnly(task.plannedEndDate)}
-                                </TableCell>
-                                <TableCell>
-                                  {formatStatusLabel(task.status)}
-                                </TableCell>
-                                <TableCell>{task.ownerUserId}</TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Task</TableHead>
+                              <TableHead>Stage</TableHead>
+                              <TableHead>Linked object</TableHead>
+                              <TableHead>Planned</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Owner</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {scheduleTasks.map((task) => {
+                              const primaryLink = scheduleLinksByTaskId.get(
+                                task.id,
+                              )?.[0];
+
+                              return (
+                                <TableRow key={task.id}>
+                                  <TableCell className="font-medium">
+                                    {task.title}
+                                  </TableCell>
+                                  <TableCell>
+                                    {stageNameById.get(task.buildStageId)}
+                                  </TableCell>
+                                  <TableCell>
+                                    {primaryLink
+                                      ? scheduleLinkedObjectLabel(
+                                          primaryLink.linkedObjectType,
+                                          primaryLink.linkedObjectId,
+                                          {
+                                            allocationLabelById,
+                                            blockerTitleById: new Map(
+                                              blockers.map((blocker) => [
+                                                blocker.id,
+                                                blocker.title,
+                                              ]),
+                                            ),
+                                            matrixEntryLabelById,
+                                            profileLabelById,
+                                            projectName: project.name,
+                                            readinessSignalLabelById: new Map(
+                                              readinessSignals.map((signal) => [
+                                                signal.id,
+                                                signal.summary,
+                                              ]),
+                                            ),
+                                            stageNameById,
+                                          },
+                                        )
+                                      : "-"}
+                                  </TableCell>
+                                  <TableCell>
+                                    {formatDateOnly(task.plannedStartDate)} -{" "}
+                                    {formatDateOnly(task.plannedEndDate)}
+                                  </TableCell>
+                                  <TableCell>
+                                    {formatStatusLabel(task.status)}
+                                  </TableCell>
+                                  <TableCell>{task.ownerUserId}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
                     </div>
                   )}
 
@@ -2076,6 +2053,142 @@ function TopStatusMetric({
   );
 }
 
+function ScheduleGanttPreview({
+  compact = false,
+  stageNameById,
+  tasks,
+}: {
+  compact?: boolean;
+  stageNameById: Map<string, string>;
+  tasks: ScheduleTask[];
+}) {
+  const range = scheduleDateRange(tasks);
+
+  if (!range) {
+    return null;
+  }
+
+  const ticks = scheduleRangeTicks(range.start, range.end);
+
+  return (
+    <div className="overflow-x-auto">
+      <div className={compact ? "min-w-[520px]" : "min-w-[720px]"}>
+        <div
+          className={[
+            "grid items-end gap-3 border-b border-slate-200 pb-2",
+            compact
+              ? "grid-cols-[150px_minmax(260px,1fr)]"
+              : "grid-cols-[210px_minmax(360px,1fr)]",
+          ].join(" ")}
+        >
+          <div className="text-[11px] font-semibold uppercase tracking-normal text-slate-500">
+            Task
+          </div>
+          <div className="relative h-5">
+            {ticks.map((tick, index) => (
+              <div
+                className={[
+                  "absolute top-0 whitespace-nowrap text-[11px] font-medium text-slate-500",
+                  index === 0
+                    ? "translate-x-0"
+                    : index === ticks.length - 1
+                      ? "-translate-x-full"
+                      : "-translate-x-1/2",
+                ].join(" ")}
+                key={tick.date.toISOString()}
+                style={{ left: `${tick.left}%` }}
+              >
+                {formatDateOnly(tick.date)}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-2 pt-3">
+          {tasks.map((task) => {
+            const position = scheduleTaskPosition(task, range);
+
+            return (
+              <div
+                className={[
+                  "grid items-center gap-3",
+                  compact
+                    ? "grid-cols-[150px_minmax(260px,1fr)]"
+                    : "grid-cols-[210px_minmax(360px,1fr)]",
+                ].join(" ")}
+                key={task.id}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-slate-950">
+                    {task.title}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
+                    <span className="truncate">
+                      {stageNameById.get(task.buildStageId) ?? "Stage"}
+                    </span>
+                    <span aria-hidden="true">/</span>
+                    <span>{formatStatusLabel(task.status)}</span>
+                  </div>
+                </div>
+
+                <div className="relative h-9 rounded-lg bg-slate-100 ring-1 ring-inset ring-slate-200">
+                  {ticks.map((tick) => (
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-y-0 w-px bg-white"
+                      key={`${task.id}-${tick.date.toISOString()}`}
+                      style={{ left: `${tick.left}%` }}
+                    />
+                  ))}
+                  <div
+                    className={[
+                      "absolute top-1/2 flex h-5 -translate-y-1/2 items-center rounded-full px-2 shadow-sm",
+                      scheduleStatusBarClass(task.status),
+                    ].join(" ")}
+                    style={{
+                      left: `${position.left}%`,
+                      width: `${position.width}%`,
+                    }}
+                    title={`${task.title}: ${formatDateOnly(
+                      task.plannedStartDate,
+                    )} - ${formatDateOnly(task.plannedEndDate)}`}
+                  >
+                    <span className="truncate text-[11px] font-semibold text-white">
+                      {task.priority}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-500">
+          <ScheduleLegendItem className="bg-slate-400" label="Todo" />
+          <ScheduleLegendItem className="bg-sky-700" label="In Progress" />
+          <ScheduleLegendItem className="bg-emerald-600" label="Done" />
+          <ScheduleLegendItem className="bg-red-600" label="Blocked" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleLegendItem({
+  className,
+  label,
+}: {
+  className: string;
+  label: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`size-2 rounded-full ${className}`} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
 function WorkflowStepLink({
   active,
   index,
@@ -2349,6 +2462,87 @@ function formatDateOnly(value: Date) {
     day: "2-digit",
     month: "short",
   }).format(value);
+}
+
+function scheduleDateRange(tasks: ScheduleTask[]) {
+  if (tasks.length === 0) {
+    return null;
+  }
+
+  const starts = tasks.map((task) => startOfDate(task.plannedStartDate));
+  const ends = tasks.map((task) => startOfDate(task.plannedEndDate));
+
+  return {
+    end: new Date(Math.max(...ends.map((date) => date.getTime()))),
+    start: new Date(Math.min(...starts.map((date) => date.getTime()))),
+  };
+}
+
+function scheduleRangeTicks(start: Date, end: Date) {
+  const totalDays = Math.max(daysBetween(start, end), 1);
+  const tickCount = totalDays < 7 ? 3 : 4;
+
+  return Array.from({ length: tickCount }, (_, index) => {
+    const left = (index / (tickCount - 1)) * 100;
+    const date = new Date(start);
+    date.setDate(start.getDate() + Math.round((totalDays * left) / 100));
+
+    return { date, left };
+  });
+}
+
+function scheduleTaskPosition(
+  task: ScheduleTask,
+  range: { end: Date; start: Date },
+) {
+  const totalDays = Math.max(daysBetween(range.start, range.end) + 1, 1);
+  const taskStartOffset = Math.max(
+    daysBetween(range.start, startOfDate(task.plannedStartDate)),
+    0,
+  );
+  const taskDuration = Math.max(
+    daysBetween(
+      startOfDate(task.plannedStartDate),
+      startOfDate(task.plannedEndDate),
+    ) + 1,
+    1,
+  );
+  const left = Math.min((taskStartOffset / totalDays) * 100, 96);
+  const rawWidth = (taskDuration / totalDays) * 100;
+  const width = Math.min(Math.max(rawWidth, 8), 100 - left);
+
+  return { left, width };
+}
+
+function scheduleStatusBarClass(status: string) {
+  if (status === "blocked") {
+    return "bg-red-600";
+  }
+
+  if (status === "done") {
+    return "bg-emerald-600";
+  }
+
+  if (status === "in_progress") {
+    return "bg-sky-700";
+  }
+
+  return "bg-slate-400";
+}
+
+function startOfDate(value: Date) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+
+  return date;
+}
+
+function daysBetween(start: Date, end: Date) {
+  const dayInMs = 24 * 60 * 60 * 1000;
+
+  return Math.round(
+    (startOfDate(end).getTime() - startOfDate(start).getTime()) / dayInMs,
+  );
 }
 
 function formatLogValue(value: unknown) {
