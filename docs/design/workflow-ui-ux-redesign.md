@@ -61,3 +61,21 @@ direction:
   body scroll.
 - Clerk development toast can appear during local verification; it is external
   to the app UI.
+
+## Reference Fidelity Pass
+
+The second pass tightens the implementation against the generated concept
+reference:
+
+- The project header is treated as a compact app command bar rather than a large
+  hero-style project card.
+- The desktop planning workspace enters a three-column shell at 1440px-class
+  widths: workflow rail, active planning surface, and AI/review rail.
+- The final dashboard includes a concept-like tab strip for matrix, allocation,
+  schedule, and readiness views.
+- The final build matrix uses profile rows with allocated qty, process route,
+  material variant, and readiness rather than a generic object list.
+- The schedule preview uses compact timeline bars so it reads like a Gantt
+  foundation even before full dependency visualization.
+- The AI Planning Copilot rail includes suggestions/activity tabs and next
+  actions, matching the concept's review-side workflow.

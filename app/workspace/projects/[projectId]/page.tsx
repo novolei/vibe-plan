@@ -413,29 +413,29 @@ export default async function ProjectPage({
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-950">
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="rounded-2xl border bg-white px-5 py-5 shadow-sm">
-          <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
+      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
+        <header className="rounded-xl border bg-white px-4 py-3 shadow-sm">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0">
               <Link
-                className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900"
+                className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900"
                 href="/workspace"
               >
                 <Route className="size-4" aria-hidden="true" />
-                Workspace
+                Vibe Plan / Workspace
               </Link>
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
+                <h1 className="text-xl font-semibold tracking-normal sm:text-2xl">
                   {project.name}
                 </h1>
                 <Badge variant="secondary">{project.status}</Badge>
               </div>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
                 {project.description}
               </p>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-4 2xl:min-w-[520px]">
+            <div className="grid gap-2 sm:grid-cols-4 xl:min-w-[520px]">
               <MetricTile label="Requested" value={totalRequestedQty} />
               <MetricTile label="Allocated" value={totalAllocatedQty} />
               <MetricTile
@@ -451,7 +451,7 @@ export default async function ProjectPage({
             </div>
           </div>
 
-          <div className="mt-5 flex flex-col gap-3 border-t pt-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="mt-4 flex flex-col gap-3 border-t pt-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap gap-2">
               {stages.length === 0 ? (
                 <Badge variant="outline">No stage yet</Badge>
@@ -481,8 +481,8 @@ export default async function ProjectPage({
           </div>
         </header>
 
-        <section className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)] 2xl:grid-cols-[260px_minmax(0,1fr)_330px]">
-          <aside className="h-fit rounded-2xl border bg-white p-3 shadow-sm lg:sticky lg:top-4">
+        <section className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_310px]">
+          <aside className="h-fit rounded-xl border bg-white p-3 shadow-sm lg:sticky lg:top-4">
             <div className="mb-3 flex items-center gap-2 px-2 text-sm font-medium text-slate-900">
               <Workflow className="size-4 text-sky-700" aria-hidden="true" />
               ADR workflow
@@ -568,7 +568,7 @@ export default async function ProjectPage({
               className={sectionClass(
                 activeStep,
                 "dashboard",
-                "grid gap-6 xl:grid-cols-2",
+                "grid gap-4 xl:grid-cols-2",
               )}
             >
               <Card className="xl:col-span-2">
@@ -579,67 +579,114 @@ export default async function ProjectPage({
                     allocation posture for {activeStage?.name ?? "all stages"}.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-4">
-                  <MetricTile
-                    label="Profiles"
-                    value={stageScopedProfiles.length}
-                  />
-                  <MetricTile
-                    label="Matrix rows"
-                    value={stageScopedMatrixEntries.length}
-                  />
-                  <MetricTile
-                    label="Schedule tasks"
-                    value={stageScopedScheduleTasks.length}
-                  />
-                  <MetricTile
-                    label="Stage readiness"
-                    tone={readinessTone(stageScopedReadiness)}
-                    value={formatReadinessLabel(stageScopedReadiness)}
-                  />
+                <CardContent className="grid gap-4">
+                  <DashboardTabs />
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <MetricTile
+                      label="Profiles"
+                      value={stageScopedProfiles.length}
+                    />
+                    <MetricTile
+                      label="Matrix rows"
+                      value={stageScopedMatrixEntries.length}
+                    />
+                    <MetricTile
+                      label="Schedule tasks"
+                      value={stageScopedScheduleTasks.length}
+                    />
+                    <MetricTile
+                      label="Stage readiness"
+                      tone={readinessTone(stageScopedReadiness)}
+                      value={formatReadinessLabel(stageScopedReadiness)}
+                    />
+                  </div>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Final build matrix</CardTitle>
+                  <CardTitle>Process / material build matrix</CardTitle>
                   <CardDescription>
-                    Process and material mapping for allocated profiles.
+                    Matrix rows are grouped by allocated config profile.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {stageScopedMatrixEntries.length === 0 ? (
+                  {stageScopedProfiles.length === 0 ? (
                     <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                      No matrix rows for this stage yet.
+                      No config profiles for this stage yet.
                     </div>
                   ) : (
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Allocation</TableHead>
-                          <TableHead>Process</TableHead>
-                          <TableHead>Material</TableHead>
+                          <TableHead>Config profile</TableHead>
+                          <TableHead>Allocated</TableHead>
+                          <TableHead>Process route</TableHead>
+                          <TableHead>Material variant</TableHead>
                           <TableHead>Readiness</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {stageScopedMatrixEntries.map((entry) => (
-                          <TableRow key={entry.id}>
-                            <TableCell className="font-medium">
-                              {allocationLabelById.get(
-                                entry.buildQtyAllocationId,
-                              )}
-                            </TableCell>
-                            <TableCell>{entry.buildProcessRoute}</TableCell>
-                            <TableCell>{entry.keyMaterialVariant}</TableCell>
-                            <TableCell>
-                              <ReadinessBadge status={entry.readinessStatus} />
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {stageScopedProfiles.map((profile) => {
+                          const allocation = activeAllocationByProfileId.get(
+                            profile.id,
+                          );
+                          const entry = allocation
+                            ? stageScopedMatrixEntries.find(
+                                (matrixEntry) =>
+                                  matrixEntry.buildQtyAllocationId ===
+                                  allocation.id,
+                              )
+                            : undefined;
+
+                          return (
+                            <TableRow key={profile.id}>
+                              <TableCell className="font-medium">
+                                {profileLabelById.get(profile.id)}
+                              </TableCell>
+                              <TableCell>
+                                {allocation?.allocatedQty ?? 0}
+                              </TableCell>
+                              <TableCell>
+                                {entry?.buildProcessRoute ?? (
+                                  <span className="text-amber-600">
+                                    unmapped
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {entry?.keyMaterialVariant ?? (
+                                  <span className="text-amber-600">
+                                    unmapped
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {entry ? (
+                                  <ReadinessBadge
+                                    status={entry.readinessStatus}
+                                  />
+                                ) : (
+                                  <Badge
+                                    className="bg-amber-50 text-amber-700"
+                                    variant="outline"
+                                  >
+                                    Partial
+                                  </Badge>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   )}
+                  <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
+                    <span>Mapped / Required by config profile</span>
+                    <span className="text-emerald-700">Greenlight</span>
+                    <span className="text-amber-700">Partial</span>
+                    <span className="text-red-700">Blocked</span>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -659,25 +706,53 @@ export default async function ProjectPage({
                     <div className="grid gap-3">
                       {stageScopedScheduleTasks.map((task) => (
                         <div
-                          className="grid gap-3 rounded-lg border bg-slate-50/80 p-3 md:grid-cols-[minmax(0,1fr)_180px_auto]"
+                          className="grid gap-3 rounded-lg border bg-slate-50/80 p-3 md:grid-cols-[minmax(0,1fr)_210px]"
                           key={task.id}
                         >
                           <div className="min-w-0">
-                            <div className="truncate text-sm font-medium">
-                              {task.title}
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="truncate text-sm font-medium">
+                                {task.title}
+                              </div>
+                              <Badge variant="secondary">
+                                {formatStatusLabel(task.status)}
+                              </Badge>
                             </div>
                             <div className="mt-1 text-xs text-slate-500">
                               {stageNameById.get(task.buildStageId)} /{" "}
                               {task.priority}
                             </div>
                           </div>
-                          <div className="text-sm text-slate-600">
-                            {formatDateOnly(task.plannedStartDate)} -{" "}
-                            {formatDateOnly(task.plannedEndDate)}
+                          <div>
+                            <div className="mb-1 flex justify-between text-xs text-slate-500">
+                              <span>
+                                {formatDateOnly(task.plannedStartDate)}
+                              </span>
+                              <span>{formatDateOnly(task.plannedEndDate)}</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-slate-200">
+                              <div
+                                className={[
+                                  "h-2 rounded-full",
+                                  task.status === "blocked"
+                                    ? "bg-red-500"
+                                    : task.status === "done"
+                                      ? "bg-emerald-500"
+                                      : task.status === "in_progress"
+                                        ? "bg-sky-700"
+                                        : "bg-slate-400",
+                                ].join(" ")}
+                                style={{
+                                  width:
+                                    task.status === "done"
+                                      ? "100%"
+                                      : task.status === "in_progress"
+                                        ? "62%"
+                                        : "36%",
+                                }}
+                              />
+                            </div>
                           </div>
-                          <Badge variant="secondary">
-                            {formatStatusLabel(task.status)}
-                          </Badge>
                         </div>
                       ))}
                     </div>
@@ -1678,7 +1753,7 @@ export default async function ProjectPage({
             </section>
           </div>
 
-          <aside className="grid h-fit grid-cols-1 gap-4 lg:col-start-2 2xl:col-start-auto 2xl:sticky 2xl:top-4">
+          <aside className="grid h-fit grid-cols-1 gap-4 lg:col-start-2 xl:col-start-auto xl:sticky xl:top-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1690,6 +1765,14 @@ export default async function ProjectPage({
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4">
+                <div className="grid grid-cols-2 border-b text-sm">
+                  <div className="border-b-2 border-sky-700 px-2 pb-2 text-center font-medium text-sky-800">
+                    Suggestions
+                  </div>
+                  <div className="px-2 pb-2 text-center text-slate-500">
+                    Activity
+                  </div>
+                </div>
                 <AIGenerateStageSummaryForm
                   defaultStageId={activeStageId}
                   projectId={project.id}
@@ -1721,6 +1804,23 @@ export default async function ProjectPage({
                       No proposal yet.
                     </p>
                   )}
+                </div>
+                <div className="rounded-lg border bg-white p-3">
+                  <div className="mb-2 text-sm font-medium">Next actions</div>
+                  <div className="grid gap-2 text-sm text-slate-600">
+                    <label className="flex items-start gap-2">
+                      <input className="mt-1" type="checkbox" readOnly />
+                      Complete unmapped process/material rows.
+                    </label>
+                    <label className="flex items-start gap-2">
+                      <input className="mt-1" type="checkbox" readOnly />
+                      Review allocation warnings before baseline.
+                    </label>
+                    <label className="flex items-start gap-2">
+                      <input className="mt-1" type="checkbox" readOnly />
+                      Validate readiness blockers for Greenlight.
+                    </label>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1799,6 +1899,31 @@ type WorkflowStep = {
 
 type MetricTone = "default" | "good" | "warning" | "bad";
 
+function DashboardTabs() {
+  return (
+    <div className="flex flex-wrap gap-1 border-b text-sm">
+      {[
+        "Process / Material Matrix",
+        "Allocation Summary",
+        "Schedule Preview",
+        "Readiness Overview",
+      ].map((label, index) => (
+        <div
+          className={[
+            "border-b-2 px-3 py-2 font-medium",
+            index === 0
+              ? "border-sky-700 text-sky-800"
+              : "border-transparent text-slate-500",
+          ].join(" ")}
+          key={label}
+        >
+          {label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function WorkflowStepLink({
   active,
   index,
@@ -1813,7 +1938,7 @@ function WorkflowStepLink({
   return (
     <Link
       className={[
-        "group grid grid-cols-[28px_minmax(0,1fr)_auto] gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors",
+        "group grid grid-cols-[28px_minmax(0,1fr)_auto] gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
         active
           ? "bg-sky-50 text-sky-950 ring-1 ring-sky-200"
           : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
@@ -1822,8 +1947,12 @@ function WorkflowStepLink({
     >
       <span
         className={[
-          "flex size-7 items-center justify-center rounded-lg text-xs font-semibold",
-          active ? "bg-sky-600 text-white" : "bg-slate-100 text-slate-500",
+          "flex size-7 items-center justify-center rounded-full text-xs font-semibold",
+          active
+            ? "bg-sky-700 text-white"
+            : step.status === "ready"
+              ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+              : "bg-slate-100 text-slate-500",
         ].join(" ")}
       >
         {index}
@@ -1874,7 +2003,7 @@ function MetricTile({
   return (
     <div
       className={[
-        "rounded-xl border px-3 py-2.5",
+        "rounded-lg border px-3 py-2",
         tone === "good"
           ? "border-emerald-200 bg-emerald-50"
           : tone === "warning"
@@ -1884,10 +2013,12 @@ function MetricTile({
               : "bg-slate-50",
       ].join(" ")}
     >
-      <div className="text-xs font-medium uppercase text-slate-500">
+      <div className="text-[11px] font-medium uppercase tracking-normal text-slate-500">
         {label}
       </div>
-      <div className="mt-1 text-lg font-semibold text-slate-950">{value}</div>
+      <div className="mt-0.5 text-base font-semibold text-slate-950">
+        {value}
+      </div>
     </div>
   );
 }
