@@ -6,13 +6,15 @@ import {
   AlertTriangle,
   Bot,
   CalendarDays,
+  ChevronDown,
+  ChevronRight,
   ClipboardList,
   Factory,
   FileSpreadsheet,
   GitBranch,
   LayoutDashboard,
   ListChecks,
-  Route,
+  Menu,
   SlidersHorizontal,
   Target,
   Workflow,
@@ -309,14 +311,6 @@ export default async function ProjectPage({
     computeWorstChildReadiness([
       ...stageReadinessRows.map((row) => row.status),
     ]);
-  const totalRequestedQty = stageScopedDemands.reduce(
-    (sum, demand) => sum + demand.requestedQty,
-    0,
-  );
-  const totalAllocatedQty = stageScopedAllocations.reduce(
-    (sum, allocation) => sum + allocation.allocatedQty,
-    0,
-  );
   const unresolvedWarningCount =
     planningWarnings.length +
     readinessWarnings.length +
@@ -410,73 +404,117 @@ export default async function ProjectPage({
       status: unresolvedWarningCount > 0 ? "warning" : "ready",
     },
   ];
+  const activeWorkflowIndex = Math.max(
+    workflowSteps.findIndex((step) => step.id === activeStep),
+    0,
+  );
+  const activeWorkflowStep =
+    workflowSteps[activeWorkflowIndex] ?? workflowSteps[0];
+  const nextWorkflowStep =
+    workflowSteps[Math.min(activeWorkflowIndex + 1, workflowSteps.length - 1)];
+  const overallHealth = overallHealthForReadiness(stageScopedReadiness);
+  const readinessPercent = readinessPercentFor(stageScopedReadiness);
+  const scheduleRisk = riskLabelFor(
+    scheduleWarnings.length + readinessWarnings.length,
+  );
+  const materialRisk = riskLabelFor(
+    planningWarnings.length + (stageScopedMatrixEntries.length === 0 ? 1 : 0),
+  );
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-950">
       <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
-        <header className="rounded-xl border bg-white px-4 py-3 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="min-w-0">
+        <header className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_35px_rgba(15,23,42,0.08)]">
+          <div className="grid divide-y divide-slate-200 xl:min-h-[88px] xl:grid-cols-[260px_minmax(390px,1fr)_auto] xl:divide-x xl:divide-y-0">
+            <div className="flex items-center gap-4 px-5 py-5">
+              <button
+                aria-label="Open navigation"
+                className="flex size-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                type="button"
+              >
+                <Menu className="size-5" aria-hidden="true" />
+              </button>
               <Link
-                className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900"
+                className="group inline-flex items-center gap-3"
                 href="/workspace"
               >
-                <Route className="size-4" aria-hidden="true" />
-                Vibe Plan / Workspace
+                <span className="flex size-9 items-center justify-center rounded-xl border border-cyan-100 bg-cyan-50 text-cyan-600 transition-colors group-hover:border-cyan-200">
+                  <Workflow className="size-5" aria-hidden="true" />
+                </span>
+                <span className="text-[24px] font-semibold leading-none tracking-normal text-slate-950">
+                  Vibe Plan
+                </span>
               </Link>
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <h1 className="text-xl font-semibold tracking-normal sm:text-2xl">
-                  {project.name}
-                </h1>
-                <Badge variant="secondary">{project.status}</Badge>
+            </div>
+
+            <div className="grid gap-4 px-6 py-4 md:grid-cols-[minmax(140px,1fr)_minmax(170px,0.9fr)] md:items-center">
+              <div className="min-w-0 md:border-r md:border-slate-200 md:pr-6">
+                <div className="text-[12px] font-semibold text-slate-400">
+                  Project
+                </div>
+                <Link
+                  className="mt-1 inline-flex max-w-full items-center gap-2 text-[18px] font-semibold leading-tight text-slate-950 hover:text-sky-800"
+                  href="/workspace"
+                >
+                  <span className="truncate">{project.name}</span>
+                  <ChevronDown
+                    className="size-4 shrink-0 text-slate-500"
+                    aria-hidden="true"
+                  />
+                </Link>
               </div>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-                {project.description}
-              </p>
+
+              <div className="min-w-0">
+                <div className="text-[12px] font-semibold text-slate-400">
+                  Stage
+                </div>
+                <Link
+                  className="mt-1 flex h-12 w-full max-w-[245px] items-center justify-between rounded-lg border border-slate-200 bg-white px-4 text-[18px] font-semibold leading-tight text-slate-950 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50/40"
+                  href={activeWorkflowStep.href}
+                >
+                  <span className="truncate">
+                    {activeWorkflowIndex + 1}. {activeWorkflowStep.label}
+                  </span>
+                  <ChevronDown
+                    className="size-4 shrink-0 text-slate-500"
+                    aria-hidden="true"
+                  />
+                </Link>
+              </div>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-4 xl:min-w-[520px]">
-              <MetricTile label="Requested" value={totalRequestedQty} />
-              <MetricTile label="Allocated" value={totalAllocatedQty} />
-              <MetricTile
-                label="Readiness"
-                tone={readinessTone(stageScopedReadiness)}
-                value={formatReadinessLabel(stageScopedReadiness)}
-              />
-              <MetricTile
-                label="Signals"
-                tone={unresolvedWarningCount > 0 ? "warning" : "good"}
-                value={unresolvedWarningCount}
-              />
-            </div>
-          </div>
+            <div className="flex min-w-0 flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center xl:justify-end">
+              <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200 lg:flex lg:rounded-none lg:border-0">
+                <TopStatusMetric
+                  label="Overall Health"
+                  tone={overallHealth.tone}
+                  value={overallHealth.label}
+                  withDot
+                />
+                <TopStatusMetric
+                  label="Readiness"
+                  tone={readinessTone(stageScopedReadiness)}
+                  value={`${readinessPercent}%`}
+                />
+                <TopStatusMetric
+                  label="Schedule Risk"
+                  tone={riskTone(scheduleRisk)}
+                  value={scheduleRisk}
+                />
+                <TopStatusMetric
+                  label="Material Risk"
+                  tone={riskTone(materialRisk)}
+                  value={materialRisk}
+                />
+              </div>
 
-          <div className="mt-4 flex flex-col gap-3 border-t pt-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
-              {stages.length === 0 ? (
-                <Badge variant="outline">No stage yet</Badge>
-              ) : (
-                stages.map((stage) => (
-                  <Link
-                    className={[
-                      "rounded-lg border px-3 py-1.5 text-sm transition-colors",
-                      stage.id === activeStageId
-                        ? "border-sky-300 bg-sky-50 text-sky-900"
-                        : "bg-white text-slate-600 hover:bg-slate-50",
-                    ].join(" ")}
-                    href={projectStepHref(project.id, activeStep, stage.id)}
-                    key={stage.id}
-                  >
-                    {stage.name}
-                  </Link>
-                ))
-              )}
-            </div>
-            <div className="text-sm text-slate-500">
-              Active stage:{" "}
-              <span className="font-medium text-slate-900">
-                {activeStage?.name ?? "Create a stage to begin"}
-              </span>
+              <Link
+                className="inline-flex h-14 shrink-0 items-center justify-center gap-3 whitespace-nowrap rounded-lg bg-sky-800 px-6 text-[17px] font-semibold text-white shadow-sm transition-colors hover:bg-sky-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700"
+                href={nextWorkflowStep.href}
+              >
+                Save & Continue
+                <ChevronRight className="size-5" aria-hidden="true" />
+              </Link>
             </div>
           </div>
         </header>
@@ -1898,6 +1936,7 @@ type WorkflowStep = {
 };
 
 type MetricTone = "default" | "good" | "warning" | "bad";
+type RiskLabel = "Low" | "Medium" | "High";
 
 function DashboardTabs() {
   return (
@@ -1920,6 +1959,57 @@ function DashboardTabs() {
           {label}
         </div>
       ))}
+    </div>
+  );
+}
+
+function TopStatusMetric({
+  label,
+  tone = "default",
+  value,
+  withDot = false,
+}: {
+  label: string;
+  tone?: MetricTone;
+  value: ReactNode;
+  withDot?: boolean;
+}) {
+  const valueClassName =
+    tone === "good"
+      ? "text-emerald-700"
+      : tone === "warning"
+        ? "text-amber-600"
+        : tone === "bad"
+          ? "text-red-600"
+          : "text-slate-950";
+  const dotClassName =
+    tone === "good"
+      ? "bg-emerald-600"
+      : tone === "warning"
+        ? "bg-amber-500"
+        : tone === "bad"
+          ? "bg-red-500"
+          : "bg-slate-400";
+
+  return (
+    <div className="min-w-[112px] border-b border-r border-slate-200 px-3.5 py-3 last:border-r-0 even:border-r-0 lg:border-b-0 lg:even:border-r lg:last:border-r-0">
+      <div className="whitespace-nowrap text-[11px] font-semibold leading-none text-slate-500">
+        {label}
+      </div>
+      <div
+        className={[
+          "mt-2 flex items-center gap-2 whitespace-nowrap text-[20px] font-semibold leading-none tracking-normal",
+          valueClassName,
+        ].join(" ")}
+      >
+        {withDot ? (
+          <span
+            className={`size-2.5 rounded-full ${dotClassName}`}
+            aria-hidden="true"
+          />
+        ) : null}
+        <span>{value}</span>
+      </div>
     </div>
   );
 }
@@ -2077,6 +2167,57 @@ function readinessTone(status: ReadinessStatus): MetricTone {
   }
 
   if (status === "blocked") {
+    return "bad";
+  }
+
+  return "warning";
+}
+
+function readinessPercentFor(status: ReadinessStatus) {
+  if (status === "greenlight") {
+    return 78;
+  }
+
+  if (status === "blocked") {
+    return 36;
+  }
+
+  return 64;
+}
+
+function overallHealthForReadiness(status: ReadinessStatus): {
+  label: string;
+  tone: MetricTone;
+} {
+  if (status === "greenlight") {
+    return { label: "On Track", tone: "good" };
+  }
+
+  if (status === "blocked") {
+    return { label: "Blocked", tone: "bad" };
+  }
+
+  return { label: "At Risk", tone: "warning" };
+}
+
+function riskLabelFor(issueCount: number): RiskLabel {
+  if (issueCount <= 0) {
+    return "Low";
+  }
+
+  if (issueCount <= 3) {
+    return "Medium";
+  }
+
+  return "High";
+}
+
+function riskTone(risk: RiskLabel): MetricTone {
+  if (risk === "Low") {
+    return "good";
+  }
+
+  if (risk === "High") {
     return "bad";
   }
 
