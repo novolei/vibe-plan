@@ -11,6 +11,7 @@ import {
   createFunctionalTeamDemandAction,
   createProjectAction,
   createReadinessSignalAction,
+  createReadinessSignoffAction,
   createScheduleDependencyAction,
   createScheduleTaskAction,
   generateStageSummaryProposalAction,
@@ -777,6 +778,63 @@ export function BlockerForm({
         pending={pending}
       >
         Save blocker
+      </SubmitButton>
+      <ActionMessage className="sm:col-span-2" state={state} />
+    </form>
+  );
+}
+
+export function ReadinessSignoffForm({
+  projectId,
+  readinessSignalOptions,
+}: ProjectScopedFormProps & {
+  readinessSignalOptions: Option[];
+}) {
+  const [state, action, pending] = useActionState(
+    createReadinessSignoffAction,
+    initialWorkspaceActionState,
+  );
+  const disabled = readinessSignalOptions.length === 0;
+
+  return (
+    <form
+      action={action}
+      className="grid gap-3 sm:grid-cols-2"
+      key={formKey(state)}
+    >
+      <input name="projectId" type="hidden" value={projectId} />
+      <SelectField
+        disabled={disabled}
+        name="readinessSignalId"
+        options={readinessSignalOptions}
+        placeholder="Readiness signal"
+        state={state}
+      />
+      <SelectField
+        disabled={disabled}
+        name="disposition"
+        options={[
+          { label: "Approve", value: "approved" },
+          { label: "Accept Risk", value: "accepted_risk" },
+          { label: "Reject", value: "rejected" },
+        ]}
+        placeholder="Disposition"
+        state={state}
+      />
+      <FieldError name="readinessSignalId" state={state} />
+      <FieldError name="disposition" state={state} />
+      <Textarea
+        className="sm:col-span-2"
+        defaultValue={valueFor(state, "notes")}
+        name="notes"
+        placeholder="Signoff notes"
+      />
+      <SubmitButton
+        className="sm:col-span-2"
+        disabled={disabled}
+        pending={pending}
+      >
+        Save signoff
       </SubmitButton>
       <ActionMessage className="sm:col-span-2" state={state} />
     </form>

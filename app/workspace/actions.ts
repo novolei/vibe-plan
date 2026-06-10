@@ -18,6 +18,7 @@ import {
 import {
   createBlocker,
   createReadinessSignal,
+  createReadinessSignoff,
   type ReadinessTargetType,
 } from "@/lib/domain/readiness";
 import {
@@ -37,6 +38,7 @@ import {
   functionalTeamDemandCreateSchema,
   projectInitSchema,
   readinessSignalCreateSchema,
+  readinessSignoffCreateSchema,
   scheduleDependencyCreateSchema,
   scheduleTaskCreateSchema,
 } from "@/lib/validation/planning";
@@ -334,6 +336,37 @@ export async function createReadinessSignalAction(
       "summary",
       "ownerTeam",
       "rationale",
+    ]);
+  }
+}
+
+export async function createReadinessSignoffAction(
+  _prevState: WorkspaceActionState,
+  formData: FormData,
+): Promise<WorkspaceActionState> {
+  try {
+    const parsed = readinessSignoffCreateSchema.parse({
+      projectId: formData.get("projectId"),
+      readinessSignalId: formData.get("readinessSignalId"),
+      disposition: formData.get("disposition"),
+      notes: formData.get("notes") || undefined,
+    });
+
+    await createReadinessSignoff({
+      disposition: parsed.disposition,
+      notes: parsed.notes,
+      projectId: parsed.projectId,
+      readinessSignalId: parsed.readinessSignalId,
+    });
+
+    revalidatePath(`/workspace/projects/${parsed.projectId}`);
+    return successState("Readiness signoff saved.");
+  } catch (error) {
+    return actionErrorState(error, formData, [
+      "projectId",
+      "readinessSignalId",
+      "disposition",
+      "notes",
     ]);
   }
 }

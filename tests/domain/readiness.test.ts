@@ -11,6 +11,7 @@ import {
   buildStages,
   projects,
   readinessAuditLogs,
+  readinessSignoffs,
   readinessSignals,
 } from "@/db/schema";
 import {
@@ -154,6 +155,77 @@ describe("readiness rules", () => {
     assert.deepEqual(auditRows[0]?.afterValue, {
       status: "accepted_risk",
       title: "Alternate material accepted risk",
+    });
+  });
+
+  it("stores readiness signoff disposition and audit without mutating signal status", async (t) => {
+    const fixture = await seedReadinessFixture("signoff");
+
+    t.after(async () => {
+      await db.delete(projects).where(eq(projects.id, fixture.project.id));
+    });
+
+    const [signal] = await db
+      .insert(readinessSignals)
+      .values({
+        buildStageId: fixture.stage.id,
+        ownerTeam: "Quality",
+        ownerUserId: "test-user",
+        projectId: fixture.project.id,
+        rationale: "Quality accepts the EVT residual issue.",
+        status: "at_risk",
+        summary: "Quality readiness requires signoff",
+        targetId: fixture.stage.id,
+        targetType: "build_stage",
+      })
+      .returning();
+    const [signoff] = await db
+      .insert(readinessSignoffs)
+      .values({
+        disposition: "accepted_risk",
+        notes: "Proceed for EVT only with daily containment review.",
+        projectId: fixture.project.id,
+        readinessSignalId: signal.id,
+        signerUserId: "quality-reviewer",
+      })
+      .returning();
+    await db.insert(readinessAuditLogs).values({
+      actorUserId: "quality-reviewer",
+      afterValue: {
+        disposition: signoff.disposition,
+        readinessSignalId: signal.id,
+        signalStatus: signal.status,
+      },
+      buildStageId: fixture.stage.id,
+      eventType: "readiness_signoff_created",
+      fieldName: "disposition",
+      projectId: fixture.project.id,
+      readinessSignalId: signal.id,
+      readinessSignoffId: signoff.id,
+      reason: signoff.notes,
+    });
+
+    const [storedSignal] = await db
+      .select()
+      .from(readinessSignals)
+      .where(eq(readinessSignals.id, signal.id));
+    const signoffRows = await db
+      .select()
+      .from(readinessSignoffs)
+      .where(eq(readinessSignoffs.projectId, fixture.project.id));
+    const auditRows = await db
+      .select()
+      .from(readinessAuditLogs)
+      .where(eq(readinessAuditLogs.projectId, fixture.project.id));
+
+    assert.equal(storedSignal?.status, "at_risk");
+    assert.equal(signoffRows.length, 1);
+    assert.equal(signoffRows[0]?.disposition, "accepted_risk");
+    assert.equal(auditRows[0]?.eventType, "readiness_signoff_created");
+    assert.deepEqual(auditRows[0]?.afterValue, {
+      disposition: "accepted_risk",
+      readinessSignalId: signal.id,
+      signalStatus: "at_risk",
     });
   });
 });

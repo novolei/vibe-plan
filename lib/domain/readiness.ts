@@ -7,6 +7,7 @@ import {
   buildMatrixEntries,
   buildStages,
   readinessAuditLogs,
+  readinessSignoffs,
   readinessSignals,
 } from "@/db/schema";
 import { db } from "@/db/client";
@@ -52,10 +53,17 @@ export type CreateBlockerInput = {
   title: string;
 };
 
+export type CreateReadinessSignoffInput = {
+  disposition: "accepted_risk" | "approved" | "rejected";
+  notes?: string;
+  projectId: string;
+  readinessSignalId: string;
+};
+
 export async function listReadinessRecordsForProject(projectId: string) {
   await getProjectForCurrentUser(projectId);
 
-  const [signals, projectBlockers, auditLogs] = await Promise.all([
+  const [signals, projectBlockers, signoffs, auditLogs] = await Promise.all([
     db.query.readinessSignals.findMany({
       where: and(
         eq(readinessSignals.projectId, projectId),
@@ -67,6 +75,10 @@ export async function listReadinessRecordsForProject(projectId: string) {
       where: and(eq(blockers.projectId, projectId), isNull(blockers.deletedAt)),
       orderBy: [asc(blockers.createdAt)],
     }),
+    db.query.readinessSignoffs.findMany({
+      where: eq(readinessSignoffs.projectId, projectId),
+      orderBy: [asc(readinessSignoffs.createdAt)],
+    }),
     db.query.readinessAuditLogs.findMany({
       where: eq(readinessAuditLogs.projectId, projectId),
       orderBy: [asc(readinessAuditLogs.createdAt)],
@@ -76,6 +88,7 @@ export async function listReadinessRecordsForProject(projectId: string) {
   return {
     blockers: projectBlockers,
     readinessAuditLogs: auditLogs,
+    readinessSignoffs: signoffs,
     readinessSignals: signals,
     readinessWarnings: buildReadinessWarnings({
       blockers: projectBlockers,
@@ -176,6 +189,47 @@ export async function createBlocker(input: CreateBlockerInput) {
     });
 
     return blocker;
+  });
+}
+
+export async function createReadinessSignoff(
+  input: CreateReadinessSignoffInput,
+) {
+  const authContext = await requireUser();
+  const signal = await getReadinessSignalForProject(
+    input.projectId,
+    input.readinessSignalId,
+  );
+
+  return db.transaction(async (tx) => {
+    const [signoff] = await tx
+      .insert(readinessSignoffs)
+      .values({
+        disposition: input.disposition,
+        notes: input.notes || "",
+        projectId: input.projectId,
+        readinessSignalId: signal.id,
+        signerUserId: authContext.userId,
+      })
+      .returning();
+
+    await tx.insert(readinessAuditLogs).values({
+      actorUserId: authContext.userId,
+      afterValue: {
+        disposition: signoff.disposition,
+        readinessSignalId: signal.id,
+        signalStatus: signal.status,
+      },
+      buildStageId: signal.buildStageId,
+      eventType: "readiness_signoff_created",
+      fieldName: "disposition",
+      projectId: signal.projectId,
+      readinessSignalId: signal.id,
+      readinessSignoffId: signoff.id,
+      reason: signoff.notes,
+    });
+
+    return signoff;
   });
 }
 

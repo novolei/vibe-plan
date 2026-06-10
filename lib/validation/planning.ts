@@ -110,6 +110,13 @@ export const readinessSignalCreateSchema = z.object({
   rationale: z.string().trim().optional(),
 });
 
+export const readinessSignoffCreateSchema = z.object({
+  projectId: z.string().uuid(),
+  readinessSignalId: z.string().uuid(),
+  disposition: z.enum(["approved", "accepted_risk", "rejected"]),
+  notes: z.string().trim().optional(),
+});
+
 export const blockerCreateSchema = z.object({
   projectId: z.string().uuid(),
   targetKey: readinessTargetKeySchema,

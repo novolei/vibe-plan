@@ -375,6 +375,31 @@ Implementation note: Completed in `db/schema/index.ts`,
 `app/workspace/projects/[projectId]/page.tsx`, and
 `tests/domain/readiness.test.ts`.
 
+### Ticket 8.2: Readiness Signoff MVP
+
+Goal: Make Greenlight, At Risk, and Blocked readiness decisions reviewable by
+human signoff before a heavier gate governance model arrives.
+
+Scope:
+
+- Reuse the existing `readiness_signoffs` and `readiness_audit_logs` tables.
+- Add a domain service and workspace action for readiness signal signoff.
+- Add workspace UI to capture signoff disposition and notes.
+- Show signoff count on readiness signals and signoff history in the readiness
+  section.
+
+Acceptance:
+
+- A human user can approve, accept risk, or reject a readiness signal.
+- Signoff records keep signer, disposition, notes, and timestamp.
+- Signoff creation writes a readiness audit event.
+- No readiness status is automatically changed by signoff creation.
+
+Implementation note: Completed in `lib/domain/readiness.ts`,
+`app/workspace/actions.ts`, `components/planning/action-forms.tsx`,
+`app/workspace/projects/[projectId]/page.tsx`, and
+`tests/domain/readiness.test.ts`.
+
 ## Milestone 9: Schedule Extension MVP
 
 ### Ticket 9.1: Schedule Tasks, Links, Dependencies, and Warnings
@@ -443,6 +468,7 @@ Deferred beyond MVP v0.1:
 
 - Formal baseline confirmation workflow.
 - Critical path UI and dependency editing on top of the visual Gantt preview.
-- Readiness checklist templates and mandatory gate signoff governance.
+- Readiness checklist templates and mandatory gate governance beyond the
+  signoff MVP.
 - Project/stage role model beyond current owner-based access.
 - Explicit AI operation apply workflow for baseline-impacting mutations.

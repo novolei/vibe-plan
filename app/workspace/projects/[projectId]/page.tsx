@@ -34,6 +34,7 @@ import {
   DemandProfileMappingForm,
   FunctionalTeamDemandForm,
   ReadinessSignalForm,
+  ReadinessSignoffForm,
   ScheduleDependencyForm,
   ScheduleTaskForm,
 } from "@/components/planning/action-forms";
@@ -116,6 +117,7 @@ export default async function ProjectPage({
     profiles,
     project,
     readinessAuditLogs,
+    readinessSignoffs,
     readinessSignals,
     readinessWarnings,
     scheduleAuditLogs,
@@ -194,6 +196,16 @@ export default async function ProjectPage({
     )} / ${signal.summary}`,
     value: signal.id,
   }));
+  const readinessSignalLabelById = new Map(
+    readinessSignals.map((signal) => [signal.id, signal.summary]),
+  );
+  const signoffsBySignalId = new Map<string, typeof readinessSignoffs>();
+
+  for (const signoff of readinessSignoffs) {
+    const existing = signoffsBySignalId.get(signoff.readinessSignalId) ?? [];
+    existing.push(signoff);
+    signoffsBySignalId.set(signoff.readinessSignalId, existing);
+  }
   const matrixReadinessStatusesByStageId = new Map<string, ReadinessStatus[]>();
 
   for (const entry of matrixEntries) {
@@ -1549,6 +1561,15 @@ export default async function ProjectPage({
                     </div>
                     <div className="rounded-lg border p-4">
                       <div className="mb-4 text-sm font-medium">
+                        Add readiness signoff
+                      </div>
+                      <ReadinessSignoffForm
+                        projectId={project.id}
+                        readinessSignalOptions={readinessSignalOptions}
+                      />
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <div className="mb-4 text-sm font-medium">
                         Add blocker
                       </div>
                       <BlockerForm
@@ -1571,6 +1592,7 @@ export default async function ProjectPage({
                             <TableHead>Target</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Owner</TableHead>
+                            <TableHead>Signoffs</TableHead>
                             <TableHead>Summary</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1607,7 +1629,49 @@ export default async function ProjectPage({
                                 </Badge>
                               </TableCell>
                               <TableCell>{signal.ownerTeam || "-"}</TableCell>
+                              <TableCell>
+                                {signoffsBySignalId.get(signal.id)?.length ?? 0}
+                              </TableCell>
                               <TableCell>{signal.summary}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  {readinessSignoffs.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                      No readiness signoffs.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Signal</TableHead>
+                            <TableHead>Disposition</TableHead>
+                            <TableHead>Signer</TableHead>
+                            <TableHead>When</TableHead>
+                            <TableHead>Notes</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {readinessSignoffs.map((signoff) => (
+                            <TableRow key={signoff.id}>
+                              <TableCell className="font-medium">
+                                {readinessSignalLabelById.get(
+                                  signoff.readinessSignalId,
+                                ) ?? signoff.readinessSignalId.slice(0, 8)}
+                              </TableCell>
+                              <TableCell>
+                                {formatSignoffDisposition(signoff.disposition)}
+                              </TableCell>
+                              <TableCell>{signoff.signerUserId}</TableCell>
+                              <TableCell>
+                                {formatDateTime(signoff.createdAt)}
+                              </TableCell>
+                              <TableCell>{signoff.notes || "-"}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -2567,6 +2631,22 @@ function formatReadinessLabel(value: "at_risk" | "blocked" | "greenlight") {
   }
 
   return "Blocked";
+}
+
+function formatSignoffDisposition(value: string) {
+  if (value === "approved") {
+    return "Approved";
+  }
+
+  if (value === "accepted_risk") {
+    return "Accepted Risk";
+  }
+
+  if (value === "rejected") {
+    return "Rejected";
+  }
+
+  return formatStatusLabel(value);
 }
 
 function formatOwnerTeams(processOwnerTeam: string, materialOwnerTeam: string) {
